@@ -24,7 +24,7 @@ event".
 
 ## Install
 
-The published zip is self-contained. Upload `astrbot_plugin_memory_shadow-0.5.0.zip`
+The published zip is self-contained. Upload `astrbot_plugin_memory_shadow-0.5.1.zip`
 in AstrBot WebUI → Plugins, or unzip it into `<AstrBot>/data/plugins/`.
 `tiktoken` is required for exact output budgets:
 

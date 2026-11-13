@@ -5,7 +5,7 @@
 | 插件 | 作用 | 版本 |
 |---|---|---|
 | `astrbot_plugin_digital_memory_store` | 数字记忆基座：原话入库、有界召回、未确认上下文、WebUI panel | 1.0.19 |
-| `astrbot_plugin_memory_shadow` | 原生输入、影子记忆引擎、可选临时注入、内嵌控制台 | 0.5.0 |
+| `astrbot_plugin_memory_shadow` | 原生输入、影子记忆引擎、可选临时注入、内嵌控制台 | 0.5.1 |
 
 两个插件独立安装、共享同一个 AstrBot 实例；`memory_shadow` 的发布 zip 自包含
 `memory_engine`、`memory_output`、`v1_5_consolidator`、`astrbot_memory_input`
@@ -16,7 +16,7 @@
 从本仓库 Releases 下载：
 
 - `astrbot_plugin_digital_memory_store-1.0.19.zip`
-- `astrbot_plugin_memory_shadow-0.5.0.zip`
+- `astrbot_plugin_memory_shadow-0.5.1.zip`
 - `SHA256SUMS.txt`
 
 在 AstrBot WebUI 的插件页上传 zip，或解压到 `<AstrBot>/data/plugins/`。两个插件
