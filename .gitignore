@@ -8,3 +8,5 @@ venv/
 dist/
 .dlm_console/
 *.log
+data/
+

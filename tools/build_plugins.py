@@ -70,7 +70,8 @@ def build_store() -> dict:
     _zip(STORE, archive)
     return {"name": "astrbot_plugin_digital_memory_store", "version": version,
             "archive": archive.name, "sha256": _sha256(archive),
-            "files": len(_files(STORE)), "bytes": archive.stat().st_size}
+            "files": len(zipfile.ZipFile(archive).namelist()),
+            "bytes": archive.stat().st_size}
 
 
 def build_shadow() -> dict:
