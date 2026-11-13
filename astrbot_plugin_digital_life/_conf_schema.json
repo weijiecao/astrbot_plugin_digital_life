@@ -10,9 +10,9 @@
     "default": ""
   },
   "judge_provider_id": {
-    "description": "用于关系判别的 AstrBot provider ID；留空则不建档，只入队。",
+    "description": "用于关系判别的 AstrBot provider ID。auto 使用兼容环境变量；显式留空表示关闭判别器、只入队不建档。",
     "type": "string",
-    "default": ""
+    "default": "auto"
   },
   "memory_budget_tokens": {
     "description": "临时记忆注入的 token 上限；仍受当前模型上下文预算约束。",

@@ -1,4 +1,4 @@
-# 统一插件落地状态（v0.6.0-alpha.2）
+# 统一插件落地状态（v0.6.0-alpha.3）
 
 日期：2026-11-13。基线：`8fce7a5eafb838bc082deb631fb242bc5adba6b9`。
 本文件记录单插件融合的实际进度，不替代验收报告。
@@ -15,7 +15,7 @@
 | M07 恢复切换 | 未完成 | 控制台仍备份/恢复到副本，未实现在线停写切换状态机 |
 | M08 统一 UI | 部分 | 单控制台路由与状态 API；控制台显式绑定主入口数据目录；页面仍复用 dlm_console 查询组件 |
 | M09 目标环境验收 | 未完成 | 未启动真实 AstrBot/NapCatQQ，未做重启/升级/恢复全链路 |
-| M10 测试 | 部分 | 15 项：配置优先级/模式、单包结构、自包含导入、数据目录选择、状态线程、所有权、生命周期 |
+| M10 测试 | 部分 | 16 项：配置优先级/模式、单包结构、自包含导入、数据目录选择、状态线程、所有权、生命周期 |
 | M11 发布 | 本文件对应 alpha.2 | 不发布 rc.1，不宣称旧插件能力等价 |
 
 ## alpha.2 修复的复审问题
@@ -25,7 +25,7 @@
 | F01 | ConsoleApi 接收主入口选定的 `data_dir`，通过显式 `shadow_dir` 绑定，不再按旧插件名猜目录 |
 | F02 | 状态查询移到数据库所属线程；状态接口改为异步；查询失败保留 `inbox_error`；提交后更新 `last_commit_at` |
 | F03 | 删除隐藏 `output_mode` 覆盖；`mode=ASSIST` 是唯一注入开关，输出入口再次校验 |
-| F04 | 区分 `judge_provider_id` 键缺失与显式空值；显式空值关闭判别器，不回退旧环境变量 |
+| F04 | 区分 `judge_provider_id` 键缺失、`auto` 与显式空值；显式空值关闭判别器，`auto` 才回退旧环境变量 |
 | F05 | `host_total_tokens` 默认 0=自动；只有正数才是显式上限，schema 与实现一致 |
 | F06 | 数据目录进程内/跨进程排他锁；检测旧 shadow 模块活动时进入只读诊断，不采集/不注入 |
 | F07 | `build()` 自建 `dist/`；ZIP 条目固定 `create_system=0`，干净检出可直接跑测试 |
@@ -36,7 +36,7 @@
 python -m unittest discover -s tests -t . -v
 ```
 
-- 15 项通过；
+- 16 项通过；
 - 单包根目录、metadata 无 BOM、自包含导入；
 - `OFF` 不启动 pump、生命周期 `RUNNING -> CLOSED`；
 - 控制台注册 `/astrbot_plugin_digital_life/console/status`。

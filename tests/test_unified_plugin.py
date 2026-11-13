@@ -107,6 +107,12 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(cfg.judge_kind, "astrbot")
         self.assertEqual(cfg.judge_source, "legacy-env")
 
+    def test_schema_auto_provider_can_use_legacy_env(self):
+        cfg = config.resolve({"judge_provider_id": "auto"},
+                             {"SHADOW_JUDGE_PROVIDER_ID": "old-provider"})
+        self.assertEqual(cfg.judge_provider_id, "old-provider")
+        self.assertEqual(cfg.judge_source, "legacy-env")
+
     def test_host_budget_zero_means_auto(self):
         auto = config.resolve({"host_total_tokens": 0}, {})
         explicit = config.resolve({"host_total_tokens": 8192}, {})

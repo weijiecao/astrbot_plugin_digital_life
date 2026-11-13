@@ -1,6 +1,6 @@
 # 数字生命（统一 AstrBot 插件）
 
-单插件版本 `0.6.0-alpha.2`。一个 Star、一套生命周期、一个控制台，复用现有
+单插件版本 `0.6.0-alpha.3`。一个 Star、一套生命周期、一个控制台，复用现有
 原生输入、记忆引擎、记忆基座和输出模块。本版是 M00–M03 的可运行落地骨架，
 **不是 v0.6.0-rc.1，也不宣称旧插件全部能力已迁移**。
 
@@ -21,7 +21,7 @@
 
 - `mode`：`OFF` / `COLLECT` / `ASSIST`
 - `allowed_sender_ids`：逗号分隔的用户 ID
-- `judge_provider_id`：AstrBot provider ID；留空只入队、不建档
+- `judge_provider_id`：AstrBot provider ID；`auto` 使用兼容环境变量，显式留空关闭判别器
 - `memory_budget_tokens`：注入预算，默认 512
 - `judge_timeout_seconds` / `judge_budget_chars`
 - `tick_seconds` / `tick_limit` / `retry_every`
@@ -99,8 +99,8 @@ python tools/build_unified_plugin.py
 产物：
 
 ```text
-dist/astrbot_plugin_digital_life-0.6.0-alpha.2.zip
-dist/astrbot_plugin_digital_life-0.6.0-alpha.2.sha256
+dist/astrbot_plugin_digital_life-0.6.0-alpha.3.zip
+dist/astrbot_plugin_digital_life-0.6.0-alpha.3.sha256
 dist/RELEASE_UNIFIED.json
 ```
 

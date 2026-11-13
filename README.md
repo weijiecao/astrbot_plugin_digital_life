@@ -4,7 +4,7 @@
 
 | 插件 | 形态 | 版本 | 状态 |
 |---|---|---|---|
-| `astrbot_plugin_digital_life` | **单插件融合版**：一个 Star、一套生命周期、一个控制台 | 0.6.0-alpha.2 | M00–M03 落地骨架，未完成迁移/恢复 |
+| `astrbot_plugin_digital_life` | **单插件融合版**：一个 Star、一套生命周期、一个控制台 | 0.6.0-alpha.3 | M00–M03 落地骨架，未完成迁移/恢复 |
 | `astrbot_plugin_digital_memory_store` | 数字记忆基座（独立） | 1.0.19 | 过渡期兼容 |
 | `astrbot_plugin_memory_shadow` | 原生输入 / 引擎 / 输出 / 控制台（独立） | 0.5.1 | 过渡期兼容 |
 
@@ -22,7 +22,7 @@
 - 统一控制台：`/astrbot_plugin_digital_life/console/*`；
 - 沿用 R03–R05 的退出、取消隔离与失败重试保证。
 
-安装：从 Releases 下载 `astrbot_plugin_digital_life-0.6.0-alpha.2.zip`，在 AstrBot
+安装：从 Releases 下载 `astrbot_plugin_digital_life-0.6.0-alpha.3.zip`，在 AstrBot
 WebUI 插件页上传并启用。需要 `tiktoken`：
 
 ```powershell
@@ -35,7 +35,7 @@ python -m pip install tiktoken==0.14.0
 |---|---|---|
 | `mode` | `COLLECT` | `OFF` 不采集；`COLLECT` 采集/整理；`ASSIST` 额外注入 |
 | `allowed_sender_ids` | 空 | 逗号分隔的私聊用户 ID；空表示不采集 |
-| `judge_provider_id` | 空 | AstrBot provider ID；空表示只入队、不建档 |
+| `judge_provider_id` | `auto` | AstrBot provider ID；`auto` 使用兼容环境变量，显式留空关闭判别器 |
 | `memory_budget_tokens` | 512 | 注入预算，仍受当前模型上下文约束 |
 | `judge_timeout_seconds` / `judge_budget_chars` | 20 / 6000 | 判别超时与提示词上限 |
 | `tick_seconds` / `tick_limit` / `retry_every` | 5 / 10 / 12 | 后台调度 |

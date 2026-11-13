@@ -99,6 +99,12 @@ def resolve(config=None, environ=None) -> UnifiedConfig:
 
     explicit_provider = "judge_provider_id" in config
     env_provider_id = str(environ.get("SHADOW_JUDGE_PROVIDER_ID", "") or "").strip()
+    raw_provider = config.get("judge_provider_id")
+    if explicit_provider and (raw_provider is None
+                              or str(raw_provider).strip().lower() == "auto"):
+        # The schema default is "auto": it may use compatibility env. Only an
+        # explicit non-auto empty value is an instruction to disable.
+        explicit_provider = False
     if explicit_provider:
         provider_id = str(config.get("judge_provider_id") or "").strip()
         judge_source = "plugin"
