@@ -26,9 +26,10 @@ class ConsoleApi:
 
     def __init__(self, dev: Path, instance: Path | None, read_only: bool = False,
                  plugin_name: str = "astrbot_plugin_digital_life",
-                 status_provider=None):
+                 data_dir: Path | None = None, status_provider=None):
         self.dev = Path(dev)
         self.instance = Path(instance) if instance else None
+        self.data_dir = Path(data_dir) if data_dir else None
         self.read_only = read_only
         self.plugin_name = plugin_name
         self.status_provider = status_provider
@@ -50,6 +51,7 @@ class ConsoleApi:
         try:
             paths = resolve(self.dev.parent, instance=str(self.instance)
                             if self.instance else None,
+                            shadow_dir=str(self.data_dir) if self.data_dir else None,
                             read_only=self.read_only)
             self.console = Console(paths)
         except Exception as exc:
@@ -133,7 +135,10 @@ class ConsoleApi:
         if not callable(self.status_provider):
             return self._json({})
         try:
-            return self._json(self.status_provider())
+            value = self.status_provider()
+            if asyncio.iscoroutine(value):
+                value = await value
+            return self._json(value)
         except Exception as exc:
             return self._error("%s: %s" % (type(exc).__name__, exc),
                                status_code=500)

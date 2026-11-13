@@ -4,7 +4,7 @@
 
 | 插件 | 形态 | 版本 | 状态 |
 |---|---|---|---|
-| `astrbot_plugin_digital_life` | **单插件融合版**：一个 Star、一套生命周期、一个控制台 | 0.6.0-alpha.1 | M00–M03 落地骨架，未完成迁移/恢复 |
+| `astrbot_plugin_digital_life` | **单插件融合版**：一个 Star、一套生命周期、一个控制台 | 0.6.0-alpha.2 | M00–M03 落地骨架，未完成迁移/恢复 |
 | `astrbot_plugin_digital_memory_store` | 数字记忆基座（独立） | 1.0.19 | 过渡期兼容 |
 | `astrbot_plugin_memory_shadow` | 原生输入 / 引擎 / 输出 / 控制台（独立） | 0.5.1 | 过渡期兼容 |
 
@@ -22,7 +22,7 @@
 - 统一控制台：`/astrbot_plugin_digital_life/console/*`；
 - 沿用 R03–R05 的退出、取消隔离与失败重试保证。
 
-安装：从 Releases 下载 `astrbot_plugin_digital_life-0.6.0-alpha.1.zip`，在 AstrBot
+安装：从 Releases 下载 `astrbot_plugin_digital_life-0.6.0-alpha.2.zip`，在 AstrBot
 WebUI 插件页上传并启用。需要 `tiktoken`：
 
 ```powershell
@@ -39,12 +39,13 @@ python -m pip install tiktoken==0.14.0
 | `memory_budget_tokens` | 512 | 注入预算，仍受当前模型上下文约束 |
 | `judge_timeout_seconds` / `judge_budget_chars` | 20 / 6000 | 判别超时与提示词上限 |
 | `tick_seconds` / `tick_limit` / `retry_every` | 5 / 10 / 12 | 后台调度 |
-| `host_total_tokens` | 8192 | 显式总预算；未配置时按 provider 取值 |
+| `host_total_tokens` | 0（自动） | 0 表示按当前 provider 取值；正数才作为显式上限 |
 | `console_read_only` | false | 只读控制台 |
 
 兼容 `SHADOW_JUDGE_PROVIDER`、`SHADOW_JUDGE_PROVIDER_ID`、`SHADOW_MEMORY_BUDGET`、
-`SHADOW_OUTPUT_MODE`、`SHADOW_CONSOLE_READONLY`、`DIGITAL_LIFE_ALLOWED_SENDERS`，
-插件配置优先。
+`SHADOW_HOST_TOTAL_TOKENS`、`SHADOW_CONSOLE_READONLY`、`DIGITAL_LIFE_ALLOWED_SENDERS`，
+插件配置优先；显式清空 `judge_provider_id` 会关闭判别器，不再回退环境变量。
+`mode` 是唯一注入开关，不存在隐藏的 `output_mode` 覆盖。
 
 ### 数据与迁移边界
 
@@ -55,7 +56,9 @@ python -m pip install tiktoken==0.14.0
 ```
 
 如果新目录不存在而旧 `astrbot_plugin_memory_shadow/` 存在，会继续使用旧目录并在
-状态中标记 `legacy_data_dir`，避免静默生成空库。旧基座
+状态中标记 `legacy_data_dir`，避免静默生成空库。若检测到旧 shadow 插件模块仍活动，
+或同一数据目录已被另一个统一实例占用，插件进入 `blocked-legacy` / `blocked-locked`
+只读诊断状态，不启动 pump、不采集、不注入。旧基座
 `manual_test_memory.sqlite3` 的正式迁移、实时追加契约、备份恢复切换、偏好排序/
 短指代等兼容能力尚未完成，因此本版是 **alpha 骨架**，不能称为 `v0.6.0-rc.1`。
 

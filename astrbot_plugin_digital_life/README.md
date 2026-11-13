@@ -1,6 +1,6 @@
 # 数字生命（统一 AstrBot 插件）
 
-单插件版本 `0.6.0-alpha.1`。一个 Star、一套生命周期、一个控制台，复用现有
+单插件版本 `0.6.0-alpha.2`。一个 Star、一套生命周期、一个控制台，复用现有
 原生输入、记忆引擎、记忆基座和输出模块。本版是 M00–M03 的可运行落地骨架，
 **不是 v0.6.0-rc.1，也不宣称旧插件全部能力已迁移**。
 
@@ -37,7 +37,7 @@
 $env:SHADOW_JUDGE_PROVIDER = 'astrbot'
 $env:SHADOW_JUDGE_PROVIDER_ID = '<provider id>'
 $env:DIGITAL_LIFE_ALLOWED_SENDERS = '123456789'
-$env:SHADOW_OUTPUT_MODE = 'inject'   # 兼容 ASSIST
+# 注入只由 mode=ASSIST 开启，不存在单独的 SHADOW_OUTPUT_MODE 开关
 ```
 
 `tiktoken` 用于精确 token 预算；未安装时输出为空而不是估算注入。
@@ -64,6 +64,11 @@ WebUI → 插件 → **数字生命（统一插件）** → **数字生命控制
 如果新目录不存在、而旧 `astrbot_plugin_memory_shadow/` 存在，本版继续使用旧目录，
 避免静默生成空库；状态面板会标记 `legacy_data_dir=true`。这是数据接续，不是旧基座
 `manual_test_memory.sqlite3` 的迁移。
+
+若检测到旧 shadow 插件模块仍活动，或数据目录已被另一个统一实例锁定，插件只进入
+只读诊断状态（`blocked-legacy` / `blocked-locked`），不启动 pump、不采集、不注入。
+同一目录的排他锁在进程内和跨进程都生效；显式 `judge_provider_id=""` 会关闭判别器，
+不会回退到旧环境变量。
 
 ## 本版边界
 
@@ -94,8 +99,8 @@ python tools/build_unified_plugin.py
 产物：
 
 ```text
-dist/astrbot_plugin_digital_life-0.6.0-alpha.1.zip
-dist/astrbot_plugin_digital_life-0.6.0-alpha.1.sha256
+dist/astrbot_plugin_digital_life-0.6.0-alpha.2.zip
+dist/astrbot_plugin_digital_life-0.6.0-alpha.2.sha256
 dist/RELEASE_UNIFIED.json
 ```
 

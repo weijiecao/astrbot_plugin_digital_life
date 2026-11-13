@@ -38,6 +38,7 @@ def sha256(path: Path) -> str:
 
 def build() -> dict:
     ver = version()
+    DIST.mkdir(parents=True, exist_ok=True)
     archive = DIST / ("astrbot_plugin_digital_life-%s.zip" % ver)
     with tempfile.TemporaryDirectory(prefix="dl-unified-build-") as temp:
         package = Path(temp) / "astrbot_plugin_digital_life"
@@ -54,6 +55,7 @@ def build() -> dict:
                 rel = path.relative_to(package.parent).as_posix()
                 info = zipfile.ZipInfo(rel, date_time=(2026, 11, 13, 0, 0, 0))
                 info.compress_type = zipfile.ZIP_DEFLATED
+                info.create_system = 0
                 handle.writestr(info, path.read_bytes())
     # Isolated import check for every bundled package and console asset.
     with tempfile.TemporaryDirectory(prefix="dl-unified-check-") as temp:

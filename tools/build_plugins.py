@@ -53,6 +53,7 @@ def _zip(plugin_dir: Path, archive: Path) -> None:
             rel = path.relative_to(plugin_dir.parent).as_posix()
             info = zipfile.ZipInfo(rel, date_time=(2026, 11, 13, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
+            info.create_system = 0
             handle.writestr(info, path.read_bytes())
 
 

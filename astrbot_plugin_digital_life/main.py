@@ -71,6 +71,13 @@ try:
 except Exception:
     from config import resolve as resolve_config
 
+try:
+    from .runtime.ownership import (DataDirectoryLock, OwnershipError,
+                                    legacy_plugin_active)
+except Exception:
+    from runtime.ownership import (DataDirectoryLock, OwnershipError,
+                                   legacy_plugin_active)
+
 
 def _env_int(name: str, default: int, low: int, high: int) -> int:
     try:
@@ -118,6 +125,25 @@ class DigitalLifePlugin(Star):
             self.legacy_data_dir = True
         self.base.mkdir(parents=True, exist_ok=True)
         self.log = self.base / "shadow_events.jsonl"
+        self.ownership_status = "unknown"
+        self.ownership_error = None
+        self.ownership_blocked = False
+        self._ownership = None
+        if legacy_plugin_active(context):
+            # Do not write the legacy database while the old Star is loaded.
+            self.ownership_status = "blocked-legacy"
+            self.ownership_error = "astrbot_plugin_memory_shadow is active"
+            self.ownership_blocked = True
+        else:
+            lock = DataDirectoryLock(self.base)
+            try:
+                lock.acquire()
+                self._ownership = lock
+                self.ownership_status = "owned"
+            except OwnershipError as exc:
+                self.ownership_status = "blocked-locked"
+                self.ownership_error = str(exc)
+                self.ownership_blocked = True
         self.config_error = None
         try:
             self.cfg = resolve_config(config if isinstance(config, dict) else {},
@@ -136,20 +162,15 @@ class DigitalLifePlugin(Star):
         self.persona_pinned = bool(os.environ.get("SHADOW_PERSONA_ID", "").strip())
         self.judge_kind = self.cfg.judge_kind
         self.judge_provider_id = self.cfg.judge_provider_id
+        self.judge_source = self.cfg.judge_source
         self.judge_policy = self.cfg.judge_policy
         self.judge_budget = self.cfg.judge_budget_chars
         self.judge_timeout = self.cfg.judge_timeout_seconds
         self.tick_seconds = float(self.cfg.tick_seconds)
         self.retry_every = self.cfg.retry_every
         self.tick_limit = self.cfg.tick_limit
-        # ASSIST 才注入；COLLECT 只采集/整理。兼容 SHADOW_OUTPUT_MODE 显式值。
+        # mode 是唯一注入开关；不读取隐藏的 output_mode 覆盖字段。
         self.output_mode = self.cfg.output_mode
-        if "output_mode" in (config or {}):
-            explicit = str((config or {}).get("output_mode", "")).lower()
-            if explicit in ("inject", "on", "true", "1"):
-                self.output_mode = "inject"
-            elif explicit in ("off", "false", "0"):
-                self.output_mode = "off"
         self.memory_budget = self.cfg.memory_budget_tokens
         self.console_read_only = self.cfg.console_read_only
         self.config_generation = 1
@@ -158,6 +179,9 @@ class DigitalLifePlugin(Star):
         self.last_commit_at = None
         self.last_injection_at = None
         self.last_error = None
+        self._inbox_snapshot = {}
+        self._inbox_error = None
+        self._last_commit_marker = 0
         self.output_service = None
         self.output_error = None
         self.console_api = None
@@ -223,9 +247,11 @@ class DigitalLifePlugin(Star):
             return
         api = None
         try:
-            api = ConsoleApi(DEV, root, read_only=self.console_read_only,
+            api = ConsoleApi(DEV, root, read_only=(self.console_read_only
+                                                   or self.ownership_blocked),
                              plugin_name="astrbot_plugin_digital_life",
-                             status_provider=self.status)
+                             data_dir=self.base,
+                             status_provider=self.status_async)
             count = api.register(register)
             if not count:
                 raise RuntimeError("AstrBot web API helpers unavailable")
@@ -252,36 +278,72 @@ class DigitalLifePlugin(Star):
         return sender is not None and str(sender) in self.allowed
 
     def status(self) -> dict:
-        """Return a secret-free runtime snapshot for the console."""
-        inbox = {}
-        if self.service is not None:
-            try:
-                inbox = dict(self.service.inbox.counts())
-            except Exception:
-                inbox = {}
+        """Return a secret-free snapshot; never touches SQLite from the loop."""
         return {
             "schema_version": 1,
-            "plugin_version": "0.6.0-alpha.1",
+            "plugin_version": "0.6.0-alpha.2",
             "config_generation": self.config_generation,
             "store_generation": self.store_generation,
             "mode": self.mode,
+            "output_mode": self.output_mode,
             "lifecycle": self.lifecycle,
+            "ownership": getattr(self, "ownership_status", "unknown"),
+            "ownership_error": getattr(self, "ownership_error", None),
             "provider_status": "configured" if self.judge_kind != "none" else "missing",
             "judge_provider": self.judge_kind,
+            "judge_source": self.judge_source,
             "tokenizer_status": ("ready" if self.counter is not None
                                  else "unavailable" if self.counter_failed
                                  else "lazy"),
             "allowed_senders": len(self.allowed),
             "legacy_data_dir": self.legacy_data_dir,
+            "data_dir": str(self.base),
             "input_modes": dict(self.input_modes),
-            "inbox": inbox,
+            "inbox": dict(self._inbox_snapshot),
+            "inbox_error": self._inbox_error,
             "config_error": self.config_error,
+            "error": self.error,
+            "output_error": self.output_error,
+            "console_error": self.console_error,
             "cleanup_error": self.terminate_error,
             "last_capture_at": self.last_capture_at,
             "last_commit_at": self.last_commit_at,
             "last_injection_at": self.last_injection_at,
             "last_error": self.last_error,
         }
+
+    def _status_work(self) -> dict:
+        """Runs on the database thread; only this thread may query the inbox."""
+        inbox = {}
+        error = None
+        marker = self._last_commit_marker
+        if self.service is not None:
+            try:
+                inbox = dict(self.service.inbox.counts())
+                stats = getattr(self.service, "stats", {}) or {}
+                marker = int(stats.get("created", 0)) + int(stats.get("attached", 0))
+            except Exception as exc:
+                error = "%s: %s" % (type(exc).__name__, exc)
+        return {"inbox": inbox, "error": error, "marker": marker}
+
+    async def status_async(self) -> dict:
+        """Console status: query DB state on the owning thread, not the loop."""
+        if (self.lifecycle in ("CLOSING", "CLOSED")
+                or getattr(self.pool, "_shutdown", False)):
+            return self.status()
+        loop = self.loop
+        if loop is None or loop.is_closed():
+            loop = asyncio.get_running_loop()
+        try:
+            snapshot = await loop.run_in_executor(self.pool, self._status_work)
+            self._inbox_snapshot = snapshot["inbox"]
+            self._inbox_error = snapshot["error"]
+            if snapshot["marker"] > self._last_commit_marker:
+                self._last_commit_marker = snapshot["marker"]
+                self.last_commit_at = time.time()
+        except Exception as exc:
+            self._inbox_error = "%s: %s" % (type(exc).__name__, exc)
+        return self.status()
 
     def _persona_for(self, host_persona):
         """本次采集/查询应使用的人格；显式固定且与宿主不一致时返回 ``None``。"""
@@ -556,7 +618,8 @@ class DigitalLifePlugin(Star):
 
     def _output_work(self, req, scope, query, provider=None):
         """在宿主线程池里完成检索、证据复验和临时内容块安装。"""
-        if self.lifecycle != "RUNNING" or not self._ensure():
+        if (self.mode != "ASSIST" or self.lifecycle != "RUNNING"
+                or not self._ensure()):
             return None
         if self.output_service is None or OutputRequest is None:
             return {"items": 0, "event_ids": [], "rendered_tokens": 0,
@@ -598,7 +661,8 @@ class DigitalLifePlugin(Star):
             self.store = None
 
     def _start_pump(self):
-        if (self.mode == "OFF" or self.lifecycle != "RUNNING"
+        if (self.ownership_blocked or self.mode == "OFF"
+                or self.lifecycle != "RUNNING"
                 or self.pump is not None or self.service is None):
             return
         self.pump = NativeInputPump(self.service, executor=self.pool,
@@ -613,6 +677,8 @@ class DigitalLifePlugin(Star):
             return
         self.lifecycle = "RUNNING"
         self.loop = asyncio.get_running_loop()
+        if self.ownership_blocked:
+            return
         await self.loop.run_in_executor(self.pool, self._ensure)
         if self.service is not None:
             # 启动恢复：先把 journal 里上次未投递的记录补投，再开始判别。
@@ -625,7 +691,7 @@ class DigitalLifePlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def capture(self, event):
-        if self.lifecycle != "RUNNING":
+        if self.lifecycle != "RUNNING" or self.ownership_blocked:
             return
         if self.mode == "OFF":
             with self.lock:
@@ -671,7 +737,7 @@ class DigitalLifePlugin(Star):
 
     @filter.on_llm_request()
     async def observe(self, event, req):
-        if self.lifecycle != "RUNNING":
+        if self.lifecycle != "RUNNING" or self.ownership_blocked:
             return
         if self.mode == "OFF":
             with self.lock:
@@ -704,7 +770,7 @@ class DigitalLifePlugin(Star):
             return
         budget = self.host_budget_for(req, provider)
         try:
-            if self.output_mode == "inject":
+            if self.mode == "ASSIST" and self.output_mode == "inject":
                 observed = await self.loop.run_in_executor(
                     self.pool, self._output_work, req, origin.scope_id, query,
                     provider)
@@ -720,7 +786,7 @@ class DigitalLifePlugin(Star):
                   "host_memory_tokens": observed.get("host_memory_tokens",
                                                      budget.memory_tokens),
                   "rendered_tokens": observed["rendered_tokens"]}
-        if self.output_mode == "inject":
+        if self.mode == "ASSIST" and self.output_mode == "inject":
             record.update({
                 "output_status": observed.get("output_status"),
                 "output_reason": observed.get("output_reason"),
@@ -785,6 +851,10 @@ class DigitalLifePlugin(Star):
                 await asyncio.to_thread(self.pool.shutdown, True)
                 self._pool_shutdown = True
             self.lifecycle = "CLOSED"
+            if self._ownership is not None:
+                self._ownership.release()
+                self._ownership = None
+                self.ownership_status = "released"
         except asyncio.CancelledError:
             self.terminate_error = "cleanup cancelled"
             self._cleanup_errors.append(self.terminate_error)

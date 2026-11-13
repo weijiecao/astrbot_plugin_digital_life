@@ -49,6 +49,7 @@ class UnifiedConfig:
     allowed_senders: tuple[str, ...] = field(default_factory=tuple)
     judge_kind: str = "none"
     judge_provider_id: str = ""
+    judge_source: str = "default"
     judge_policy: str = "native-input-0.2"
     judge_budget_chars: int = 6000
     judge_timeout_seconds: int = 20
@@ -96,11 +97,22 @@ def resolve(config=None, environ=None) -> UnifiedConfig:
         allowed_value = environ.get("DIGITAL_LIFE_ALLOWED_SENDERS",
                                     environ.get("SHADOW_ALLOWED_SENDERS", ""))
 
-    provider_id = str(config.get("judge_provider_id", "") or "").strip()
-    if not provider_id:
-        provider_id = str(environ.get("SHADOW_JUDGE_PROVIDER_ID", "") or "").strip()
+    explicit_provider = "judge_provider_id" in config
+    env_provider_id = str(environ.get("SHADOW_JUDGE_PROVIDER_ID", "") or "").strip()
+    if explicit_provider:
+        provider_id = str(config.get("judge_provider_id") or "").strip()
+        judge_source = "plugin"
+    else:
+        provider_id = env_provider_id
+        judge_source = ("legacy-env"
+                        if provider_id or environ.get("SHADOW_JUDGE_PROVIDER")
+                        else "default")
     env_kind = str(environ.get("SHADOW_JUDGE_PROVIDER", "none") or "none").strip().lower()
-    if provider_id:
+    if explicit_provider:
+        # An explicit empty value is an instruction to disable the judge, not
+        # permission to fall back to an old environment variable.
+        judge_kind = "astrbot" if provider_id else "none"
+    elif provider_id:
         judge_kind = "astrbot"
     elif env_kind in ("astrbot", "mock", "openai", "none"):
         judge_kind = env_kind
@@ -126,12 +138,26 @@ def resolve(config=None, environ=None) -> UnifiedConfig:
         config.get("judge_budget_chars",
                    environ.get("SHADOW_JUDGE_BUDGET_CHARS", 6000)),
         6000, 500, 20000)
-    host_total = _as_int(
-        config.get("host_total_tokens",
-                   environ.get("SHADOW_HOST_TOTAL_TOKENS", 8192)),
-        8192, 512, 2000000)
-    host_explicit = ("host_total_tokens" in config
-                     or "SHADOW_HOST_TOTAL_TOKENS" in environ)
+    host_total = 8192
+    host_explicit = False
+    if "host_total_tokens" in config:
+        raw_host = config.get("host_total_tokens")
+        try:
+            candidate = int(raw_host)
+        except (TypeError, ValueError):
+            candidate = 0
+        if candidate > 0:
+            host_total = min(max(candidate, 512), 2000000)
+            host_explicit = True
+    elif str(environ.get("SHADOW_HOST_TOTAL_TOKENS", "")).strip():
+        raw_host = environ.get("SHADOW_HOST_TOTAL_TOKENS")
+        try:
+            candidate = int(raw_host)
+        except (TypeError, ValueError):
+            candidate = 0
+        if candidate > 0:
+            host_total = min(max(candidate, 512), 2000000)
+            host_explicit = True
     read_only = _as_bool(
         config.get("console_read_only",
                    environ.get("SHADOW_CONSOLE_READONLY", False)), False)
@@ -141,6 +167,7 @@ def resolve(config=None, environ=None) -> UnifiedConfig:
     return UnifiedConfig(
         mode=mode, allowed_senders=_allowed(allowed_value),
         judge_kind=judge_kind, judge_provider_id=provider_id,
+        judge_source=judge_source,
         judge_policy=policy, judge_budget_chars=judge_budget,
         judge_timeout_seconds=judge_timeout, tick_seconds=tick_seconds,
         retry_every=retry_every, tick_limit=tick_limit,

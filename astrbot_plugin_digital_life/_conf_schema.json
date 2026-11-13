@@ -30,9 +30,9 @@
     "default": 6000
   },
   "host_total_tokens": {
-    "description": "宿主上下文总预算上限；留空/默认时按当前 provider 取值。",
+    "description": "宿主上下文总预算上限；0 表示按当前 provider 自动取值，正数才作为显式上限。",
     "type": "int",
-    "default": 8192
+    "default": 0
   },
   "tick_seconds": {
     "description": "后台 worker 周期秒数。",
