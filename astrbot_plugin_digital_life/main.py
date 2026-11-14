@@ -206,6 +206,7 @@ class DigitalLifePlugin(Star):
         self._terminate_task = None
         self._ownership_task = None
         self._ownership_interval = 2.0
+        self._pump_stop_scheduled = False
         self._pump_stopped = False
         self._judge_shutdown = False
         self._store_closed = False
@@ -293,7 +294,7 @@ class DigitalLifePlugin(Star):
         """Return a secret-free snapshot; never touches SQLite from the loop."""
         return {
             "schema_version": 1,
-            "plugin_version": "0.6.0-alpha.4",
+            "plugin_version": "0.6.0-alpha.5",
             "config_generation": self.config_generation,
             "store_generation": self.store_generation,
             "mode": self.mode,
@@ -783,8 +784,20 @@ class DigitalLifePlugin(Star):
                 self.ownership_blocked = True
                 self.ownership_status = "blocked-legacy"
                 self.ownership_error = "astrbot_plugin_memory_shadow is active"
+            if self.pump is not None and not self._pump_stop_scheduled:
+                self._pump_stop_scheduled = True
+                asyncio.create_task(self._stop_conflict_pump())
             return False
         return not self.ownership_blocked
+
+    async def _stop_conflict_pump(self):
+        try:
+            await asyncio.sleep(0)
+            pump, self.pump = self.pump, None
+            if pump is not None:
+                await pump.stop()
+        finally:
+            self._pump_stop_scheduled = False
 
     def _start_pump(self):
         if (self.ownership_blocked or self.mode == "OFF"

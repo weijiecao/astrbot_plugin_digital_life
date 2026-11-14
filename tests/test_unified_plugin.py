@@ -336,6 +336,9 @@ class PackageTests(unittest.TestCase):
                         self.assertIsNotNone(plugin.pump)
 
                         context.old_active = True
+                        self.assertFalse(await plugin._pump_guard())
+                        await asyncio.sleep(0.05)
+                        self.assertIsNone(plugin.pump)
                         self.assertFalse(await plugin._reconcile_ownership())
                         self.assertEqual(plugin.status()["ownership"],
                                          "blocked-legacy")

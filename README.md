@@ -4,7 +4,7 @@
 
 | 插件 | 形态 | 版本 | 状态 |
 |---|---|---|---|
-| `astrbot_plugin_digital_life` | **单插件融合版**：一个 Star、一套生命周期、一个控制台 | 0.6.0-alpha.4 | M00–M03 落地骨架，未完成迁移/恢复 |
+| `astrbot_plugin_digital_life` | **单插件融合版**：一个 Star、一套生命周期、一个控制台 | 0.6.0-alpha.5 | M00–M03 落地骨架，未完成迁移/恢复 |
 | `astrbot_plugin_digital_memory_store` | 数字记忆基座（独立） | 1.0.19 | 过渡期兼容 |
 | `astrbot_plugin_memory_shadow` | 原生输入 / 引擎 / 输出 / 控制台（独立） | 0.5.1 | 过渡期兼容 |
 
@@ -22,7 +22,7 @@
 - 统一控制台：`/astrbot_plugin_digital_life/console/*`；
 - 沿用 R03–R05 的退出、取消隔离与失败重试保证。
 
-安装：从 Releases 下载 `astrbot_plugin_digital_life-0.6.0-alpha.4.zip`，在 AstrBot
+安装：从 Releases 下载 `astrbot_plugin_digital_life-0.6.0-alpha.5.zip`，在 AstrBot
 WebUI 插件页上传并启用。需要 `tiktoken`：
 
 ```powershell
