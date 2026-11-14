@@ -294,7 +294,7 @@ class DigitalLifePlugin(Star):
         """Return a secret-free snapshot; never touches SQLite from the loop."""
         return {
             "schema_version": 1,
-            "plugin_version": "0.6.0-alpha.5",
+            "plugin_version": "0.6.0-alpha.6",
             "config_generation": self.config_generation,
             "store_generation": self.store_generation,
             "mode": self.mode,
@@ -771,6 +771,10 @@ class DigitalLifePlugin(Star):
         if self._ownership_task is None or self._ownership_task.done():
             self._ownership_task = asyncio.create_task(self._ownership_loop())
 
+    def _commit_allowed(self) -> bool:
+        """Synchronous fence checked on the database thread before commit."""
+        return self.lifecycle == "RUNNING" and not self.ownership_blocked
+
     async def _pump_guard(self) -> bool:
         """Last check immediately before a background tick can write."""
         if self.lifecycle != "RUNNING":
@@ -809,7 +813,8 @@ class DigitalLifePlugin(Star):
                                     interval=self.tick_seconds,
                                     retry_every=self.retry_every,
                                     limit=self.tick_limit,
-                                    guard=self._pump_guard)
+                                    guard=self._pump_guard,
+                                    commit_guard=self._commit_allowed)
         self.pump.start()
 
     async def initialize(self):

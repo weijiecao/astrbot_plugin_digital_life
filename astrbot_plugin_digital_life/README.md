@@ -1,6 +1,6 @@
 # 数字生命（统一 AstrBot 插件）
 
-单插件版本 `0.6.0-alpha.5`。一个 Star、一套生命周期、一个控制台，复用现有
+单插件版本 `0.6.0-alpha.6`。一个 Star、一套生命周期、一个控制台，复用现有
 原生输入、记忆引擎、记忆基座和输出模块。本版是 M00–M03 的可运行落地骨架，
 **不是 v0.6.0-rc.1，也不宣称旧插件全部能力已迁移**。
 
@@ -99,8 +99,8 @@ python tools/build_unified_plugin.py
 产物：
 
 ```text
-dist/astrbot_plugin_digital_life-0.6.0-alpha.5.zip
-dist/astrbot_plugin_digital_life-0.6.0-alpha.5.sha256
+dist/astrbot_plugin_digital_life-0.6.0-alpha.6.zip
+dist/astrbot_plugin_digital_life-0.6.0-alpha.6.sha256
 dist/RELEASE_UNIFIED.json
 ```
 

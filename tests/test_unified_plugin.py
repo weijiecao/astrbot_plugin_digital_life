@@ -374,6 +374,50 @@ class PackageTests(unittest.TestCase):
             finally:
                 sys.path.remove(str(package))
 
+    def test_inflight_model_result_is_not_committed_after_conflict(self):
+        _install_astrbot_stubs()
+        archive = ROOT / "dist" / self.manifest["archive"]
+        with tempfile.TemporaryDirectory(prefix="unified-inflight-") as temp:
+            with zipfile.ZipFile(archive) as handle:
+                handle.extractall(temp)
+            package = Path(temp) / "astrbot_plugin_digital_life"
+            for name in list(sys.modules):
+                if name.split(".", 1)[0] in {"memory_engine", "memory_output",
+                                             "v1_5_consolidator",
+                                             "astrbot_memory_input", "dlm_console",
+                                             "main", "console_api", "config"}:
+                    sys.modules.pop(name, None)
+            sys.path.insert(0, str(package))
+            try:
+                module = __import__("main")
+
+                class Service:
+                    def start_tick(self, *args):
+                        return "scope"
+
+                    def prepare_one(self, scope):
+                        return "task"
+
+                    def execute(self, task):
+                        return task
+
+                    def commit_one(self, task, allow_commit=None):
+                        raise AssertionError("stale result must not be committed")
+
+                calls = {"n": 0}
+
+                async def guard():
+                    calls["n"] += 1
+                    return calls["n"] == 1
+
+                pump = module.NativeInputPump(
+                    Service(), guard=guard, commit_guard=lambda: True, limit=1)
+                result = asyncio.run(pump.tick())
+                self.assertEqual(result.get("skipped"), "guard_after_model")
+                self.assertEqual(calls["n"], 2)
+            finally:
+                sys.path.remove(str(package))
+
     def test_status_queries_inbox_on_database_thread(self):
         _install_astrbot_stubs()
         archive = ROOT / "dist" / self.manifest["archive"]
