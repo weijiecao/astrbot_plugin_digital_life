@@ -109,6 +109,14 @@ def _json_dump(value) -> str:
         return str(value)
 
 
+def _load_json_file(path: Path) -> dict:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 class DigitalLifePlugin(Star):
     def __init__(self, context: Context, config=None):
         super().__init__(context)
@@ -125,6 +133,7 @@ class DigitalLifePlugin(Star):
             self.legacy_data_dir = True
         self.base.mkdir(parents=True, exist_ok=True)
         self.log = self.base / "shadow_events.jsonl"
+        self.commit_state_path = self.base / "commit_state.json"
         self.ownership_status = "unknown"
         self.ownership_error = None
         self.ownership_blocked = False
@@ -176,7 +185,8 @@ class DigitalLifePlugin(Star):
         self.config_generation = 1
         self.store_generation = 1
         self.last_capture_at = None
-        self.last_commit_at = None
+        self.last_commit_at = self._load_commit_time()
+        self.last_commit_observed_at = None
         self.last_injection_at = None
         self.last_error = None
         self._inbox_snapshot = {}
@@ -194,6 +204,8 @@ class DigitalLifePlugin(Star):
         # after CLOSING starts, even if they entered while RUNNING.
         self.lifecycle = "NEW"
         self._terminate_task = None
+        self._ownership_task = None
+        self._ownership_interval = 2.0
         self._pump_stopped = False
         self._judge_shutdown = False
         self._store_closed = False
@@ -281,7 +293,7 @@ class DigitalLifePlugin(Star):
         """Return a secret-free snapshot; never touches SQLite from the loop."""
         return {
             "schema_version": 1,
-            "plugin_version": "0.6.0-alpha.3",
+            "plugin_version": "0.6.0-alpha.4",
             "config_generation": self.config_generation,
             "store_generation": self.store_generation,
             "mode": self.mode,
@@ -308,6 +320,7 @@ class DigitalLifePlugin(Star):
             "cleanup_error": self.terminate_error,
             "last_capture_at": self.last_capture_at,
             "last_commit_at": self.last_commit_at,
+            "last_commit_observed_at": self.last_commit_observed_at,
             "last_injection_at": self.last_injection_at,
             "last_error": self.last_error,
         }
@@ -340,7 +353,7 @@ class DigitalLifePlugin(Star):
             self._inbox_error = snapshot["error"]
             if snapshot["marker"] > self._last_commit_marker:
                 self._last_commit_marker = snapshot["marker"]
-                self.last_commit_at = time.time()
+                self.last_commit_observed_at = time.time()
         except Exception as exc:
             self._inbox_error = "%s: %s" % (type(exc).__name__, exc)
         return self.status()
@@ -514,8 +527,31 @@ class DigitalLifePlugin(Star):
         return NativeRelationJudge(store, provider, policy_version=self.judge_policy,
                                    max_chars=self.judge_budget)
 
+    def _load_commit_time(self):
+        value = _load_json_file(self.commit_state_path).get("last_commit_at")
+        try:
+            return float(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _record_commit(self, result) -> None:
+        """Called on the database thread after a successful commit."""
+        if not (result.get("created") or result.get("attached")):
+            return
+        now = time.time()
+        self.last_commit_at = now
+        try:
+            temp = self.commit_state_path.with_suffix(".json.tmp")
+            temp.write_text(json.dumps({"last_commit_at": now}) + "\n",
+                            encoding="utf-8")
+            os.replace(temp, self.commit_state_path)
+        except OSError:
+            pass
+
     def _ensure(self):
         """在宿主线程池线程里打开引擎与输入服务（sqlite 连接不跨线程）。"""
+        if self.ownership_blocked:
+            return False
         if self.lifecycle in ("CLOSING", "CLOSED"):
             return False
         if self.store is not None:
@@ -533,7 +569,8 @@ class DigitalLifePlugin(Star):
             judge = self._build_judge(store)
             service = NativeInputService(
                 store, journal_path_for(self.base), judge=judge,
-                judge_revision=revision_for(judge, "none"))
+                judge_revision=revision_for(judge, "none"),
+                on_commit=self._record_commit)
         except Exception as exc:
             self.error = type(exc).__name__ + ": " + str(exc)
             return False
@@ -660,6 +697,95 @@ class DigitalLifePlugin(Star):
             self.store.close()
             self.store = None
 
+    async def _reconcile_ownership(self) -> bool:
+        """Re-check the old Star and the data-directory lock before work."""
+        if self.lifecycle != "RUNNING":
+            return False
+        loop = self.loop
+        if loop is None or loop.is_closed():
+            loop = asyncio.get_running_loop()
+            self.loop = loop
+        try:
+            legacy = legacy_plugin_active(self.context)
+        except Exception:
+            legacy = False
+        if legacy:
+            if not self.ownership_blocked:
+                self.ownership_blocked = True
+                self.ownership_status = "blocked-legacy"
+                self.ownership_error = "astrbot_plugin_memory_shadow is active"
+            if self.pump is not None:
+                await self.pump.stop()
+                self.pump = None
+            if self.store is not None:
+                try:
+                    await loop.run_in_executor(self.pool, self._close)
+                except Exception:
+                    pass
+                self._inbox_snapshot = {}
+            if self.console_api is not None:
+                self.console_api.read_only = True
+                if self.console_api.console is not None:
+                    self.console_api.console.read_only = True
+            return False
+        if not self.ownership_blocked:
+            return True
+        if self._ownership is None:
+            lock = DataDirectoryLock(self.base)
+            try:
+                lock.acquire()
+            except OwnershipError as exc:
+                self.ownership_status = "blocked-locked"
+                self.ownership_error = str(exc)
+                return False
+            self._ownership = lock
+        self.ownership_blocked = False
+        self.ownership_status = "owned"
+        self.ownership_error = None
+        try:
+            await loop.run_in_executor(self.pool, self._ensure)
+            if self.service is not None:
+                await loop.run_in_executor(self.pool,
+                                           self.service.deliver_pending)
+            self._start_pump()
+        except Exception as exc:
+            self.last_error = "%s: %s" % (type(exc).__name__, exc)
+        if self.console_api is not None:
+            self.console_api.read_only = self.console_read_only
+            if self.console_api.console is not None:
+                self.console_api.console.read_only = self.console_read_only
+        return True
+
+    async def _ownership_loop(self):
+        while self.lifecycle == "RUNNING":
+            try:
+                await self._reconcile_ownership()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.last_error = "%s: %s" % (type(exc).__name__, exc)
+            await asyncio.sleep(self._ownership_interval)
+
+    def _start_ownership_monitor(self):
+        if self._ownership_task is None or self._ownership_task.done():
+            self._ownership_task = asyncio.create_task(self._ownership_loop())
+
+    async def _pump_guard(self) -> bool:
+        """Last check immediately before a background tick can write."""
+        if self.lifecycle != "RUNNING":
+            return False
+        try:
+            legacy = legacy_plugin_active(self.context)
+        except Exception:
+            legacy = False
+        if legacy:
+            if not self.ownership_blocked:
+                self.ownership_blocked = True
+                self.ownership_status = "blocked-legacy"
+                self.ownership_error = "astrbot_plugin_memory_shadow is active"
+            return False
+        return not self.ownership_blocked
+
     def _start_pump(self):
         if (self.ownership_blocked or self.mode == "OFF"
                 or self.lifecycle != "RUNNING"
@@ -669,7 +795,8 @@ class DigitalLifePlugin(Star):
                                     judge_executor=self.judge_pool,
                                     interval=self.tick_seconds,
                                     retry_every=self.retry_every,
-                                    limit=self.tick_limit)
+                                    limit=self.tick_limit,
+                                    guard=self._pump_guard)
         self.pump.start()
 
     async def initialize(self):
@@ -677,6 +804,7 @@ class DigitalLifePlugin(Star):
             return
         self.lifecycle = "RUNNING"
         self.loop = asyncio.get_running_loop()
+        self._start_ownership_monitor()
         if self.ownership_blocked:
             return
         await self.loop.run_in_executor(self.pool, self._ensure)
@@ -691,7 +819,9 @@ class DigitalLifePlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def capture(self, event):
-        if self.lifecycle != "RUNNING" or self.ownership_blocked:
+        if self.lifecycle != "RUNNING":
+            return
+        if not await self._reconcile_ownership():
             return
         if self.mode == "OFF":
             with self.lock:
@@ -737,7 +867,9 @@ class DigitalLifePlugin(Star):
 
     @filter.on_llm_request()
     async def observe(self, event, req):
-        if self.lifecycle != "RUNNING" or self.ownership_blocked:
+        if self.lifecycle != "RUNNING":
+            return
+        if not await self._reconcile_ownership():
             return
         if self.mode == "OFF":
             with self.lock:
@@ -823,6 +955,15 @@ class DigitalLifePlugin(Star):
         self.terminate_error = None
         self._cleanup_errors = []
         try:
+            if self._ownership_task is not None:
+                self._ownership_task.cancel()
+                try:
+                    await self._ownership_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    pass
+                self._ownership_task = None
             if not self._pump_stopped:
                 if self.pump is not None:
                     await self.pump.stop()

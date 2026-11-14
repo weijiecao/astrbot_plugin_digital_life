@@ -245,6 +245,132 @@ class PackageTests(unittest.TestCase):
             finally:
                 sys.path.remove(str(package))
 
+    def test_commit_time_is_recorded_and_reloaded(self):
+        _install_astrbot_stubs()
+        archive = ROOT / "dist" / self.manifest["archive"]
+        with tempfile.TemporaryDirectory(prefix="unified-commit-") as temp:
+            with zipfile.ZipFile(archive) as handle:
+                handle.extractall(temp)
+            package = Path(temp) / "astrbot_plugin_digital_life"
+            for name in list(sys.modules):
+                if name.split(".", 1)[0] in {"memory_engine", "memory_output",
+                                             "v1_5_consolidator",
+                                             "astrbot_memory_input", "dlm_console",
+                                             "main", "console_api", "config"}:
+                    sys.modules.pop(name, None)
+            sys.path.insert(0, str(package))
+            try:
+                module = __import__("main")
+
+                class Context:
+                    conversation_manager = None
+
+                    def register_web_api(self, route, handler, methods, desc):
+                        pass
+
+                cfg = {"mode": "OFF", "allowed_sender_ids": "u1"}
+                with patch.dict(os.environ, {"ASTRBOT_ROOT": str(Path(temp) / "instance")}):
+                    first = module.DigitalLifePlugin(Context(), cfg)
+                    first._record_commit({"created": 1})
+                    committed = first.last_commit_at
+                    self.assertIsNotNone(committed)
+                    asyncio.run(first.terminate())
+                    second = module.DigitalLifePlugin(Context(), cfg)
+                    self.assertEqual(second.last_commit_at, committed)
+                    asyncio.run(second.terminate())
+            finally:
+                sys.path.remove(str(package))
+
+    def test_registry_detection_and_ownership_recovery(self):
+        _install_astrbot_stubs()
+        archive = ROOT / "dist" / self.manifest["archive"]
+        with tempfile.TemporaryDirectory(prefix="unified-registry-") as temp:
+            with zipfile.ZipFile(archive) as handle:
+                handle.extractall(temp)
+            package = Path(temp) / "astrbot_plugin_digital_life"
+            for name in list(sys.modules):
+                if name.split(".", 1)[0] in {"memory_engine", "memory_output",
+                                             "v1_5_consolidator",
+                                             "astrbot_memory_input", "dlm_console",
+                                             "main", "console_api", "config"}:
+                    sys.modules.pop(name, None)
+            sys.path.insert(0, str(package))
+            try:
+                module = __import__("main")
+
+                class Context:
+                    conversation_manager = None
+
+                    def __init__(self):
+                        self.old_active = True
+
+                    def get_all_stars(self):
+                        return [types.SimpleNamespace(
+                            name="astrbot_plugin_memory_shadow",
+                            activated=self.old_active,
+                            module_path=("data.plugins.astrbot_plugin_memory_shadow"
+                                         ".main"))]
+
+                    def get_registered_star(self, name):
+                        if name == "astrbot_plugin_memory_shadow":
+                            return self.get_all_stars()[0]
+                        return None
+
+                    def register_web_api(self, route, handler, methods, desc):
+                        pass
+
+                cfg = {"mode": "COLLECT", "allowed_sender_ids": "u1"}
+                with patch.dict(os.environ, {"ASTRBOT_ROOT": str(Path(temp) / "instance")}):
+                    context = Context()
+                    plugin = module.DigitalLifePlugin(context, cfg)
+                    self.assertEqual(plugin.status()["ownership"],
+                                     "blocked-legacy")
+                    asyncio.run(plugin.initialize())
+                    self.assertIsNone(plugin.pump)
+
+                    async def recover():
+                        context.old_active = False
+                        self.assertTrue(await plugin._reconcile_ownership())
+                        self.assertEqual(plugin.status()["ownership"], "owned")
+                        self.assertIsNotNone(plugin.store)
+                        self.assertIsNotNone(plugin.pump)
+
+                        context.old_active = True
+                        self.assertFalse(await plugin._reconcile_ownership())
+                        self.assertEqual(plugin.status()["ownership"],
+                                         "blocked-legacy")
+                        self.assertIsNone(plugin.pump)
+                        self.assertIsNone(plugin.store)
+
+                        context.old_active = False
+                        self.assertTrue(await plugin._reconcile_ownership())
+                        self.assertEqual(plugin.status()["ownership"], "owned")
+
+                    asyncio.run(recover())
+                    asyncio.run(plugin.terminate())
+            finally:
+                sys.path.remove(str(package))
+
+    def test_qualified_legacy_module_fallback(self):
+        _install_astrbot_stubs()
+        archive = ROOT / "dist" / self.manifest["archive"]
+        with tempfile.TemporaryDirectory(prefix="unified-module-") as temp:
+            with zipfile.ZipFile(archive) as handle:
+                handle.extractall(temp)
+            package = Path(temp) / "astrbot_plugin_digital_life"
+            sys.path.insert(0, str(package))
+            try:
+                module = __import__("main")
+                name = "data.plugins.astrbot_plugin_memory_shadow.main"
+                sys.modules[name] = types.ModuleType(name)
+                try:
+                    self.assertTrue(module.legacy_plugin_active(None))
+                finally:
+                    sys.modules.pop(name, None)
+                self.assertFalse(module.legacy_plugin_active(None))
+            finally:
+                sys.path.remove(str(package))
+
     def test_status_queries_inbox_on_database_thread(self):
         _install_astrbot_stubs()
         archive = ROOT / "dist" / self.manifest["archive"]
@@ -287,7 +413,8 @@ class PackageTests(unittest.TestCase):
                     plugin.service = FakeService()
                     snapshot = asyncio.run(plugin.status_async())
                     self.assertEqual(snapshot["inbox"], {"QUEUED": 1})
-                    self.assertIsNotNone(snapshot["last_commit_at"])
+                    self.assertIsNotNone(snapshot["last_commit_observed_at"])
+                    self.assertIsNone(snapshot["last_commit_at"])
                     asyncio.run(plugin.terminate())
             finally:
                 sys.path.remove(str(package))
