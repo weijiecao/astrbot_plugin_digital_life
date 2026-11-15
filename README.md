@@ -103,13 +103,12 @@
 ---
 
 
-本仓库包含数字生命系统的单插件融合版，以及过渡期的两个独立插件。
+本仓库只保留最新版单插件 `astrbot_plugin_digital_life`。旧 store / shadow 插件源码和
+旧构建脚本已统一移入 `archive/`，仅作历史查阅，不再参与构建和发布。
 
 | 插件 | 形态 | 版本 | 状态 |
 |---|---|---|---|
-| `astrbot_plugin_digital_life` | **单插件融合版**：一个 Star、一套生命周期、一个控制台 | 0.6.0-alpha.6 | M00–M03 落地骨架，未完成迁移/恢复 |
-| `astrbot_plugin_digital_memory_store` | 数字记忆基座（独立） | 1.0.19 | 过渡期兼容 |
-| `astrbot_plugin_memory_shadow` | 原生输入 / 引擎 / 输出 / 控制台（独立） | 0.5.1 | 过渡期兼容 |
+| `astrbot_plugin_digital_life` | **单插件融合版**：一个 Star、一套生命周期、一个控制台 | 0.7.0-dev.2 | 开发版；迁移/实时追加/恢复/兼容适配已接入，真实宿主验收未完成 |
 
 单插件版的发布 zip 自包含 `memory_engine`、`memory_output`、
 `v1_5_consolidator`、`astrbot_memory_input`、`dlm_console`，安装时不需要额外的
@@ -125,7 +124,7 @@
 - 统一控制台：`/astrbot_plugin_digital_life/console/*`；
 - 沿用 R03–R05 的退出、取消隔离与失败重试保证。
 
-安装：从 Releases 下载 `astrbot_plugin_digital_life-0.6.0-alpha.6.zip`，在 AstrBot
+安装：从 Releases 下载 `astrbot_plugin_digital_life-0.7.0-dev.2.zip`，在 AstrBot
 WebUI 插件页上传并启用。需要 `tiktoken`：
 
 ```powershell
@@ -165,14 +164,19 @@ python -m pip install tiktoken==0.14.0
 `manual_test_memory.sqlite3` 的正式迁移、实时追加契约、备份恢复切换、偏好排序/
 短指代等兼容能力尚未完成，因此本版是 **alpha 骨架**，不能称为 `v0.6.0-rc.1`。
 
-## 旧双插件（过渡期）
+## 历史归档
 
-Releases 中仍保留：
+旧版本已统一放入：
 
-- `astrbot_plugin_digital_memory_store-1.0.19.zip`
-- `astrbot_plugin_memory_shadow-0.5.1.zip`
+```text
+archive/
+  plugins/astrbot_plugin_digital_memory_store/   旧基座插件源码
+  plugins/astrbot_plugin_memory_shadow/          旧 shadow 插件源码
+  tools/build_plugins.py                         旧双插件构建脚本
+```
 
-两者可独立安装；配置见各自 README。新部署建议直接使用单插件版。
+历史 ZIP 仍可从 GitHub Releases 获取，但不再作为当前发布入口。新部署只使用
+`astrbot_plugin_digital_life`。
 
 ## 从源码运行
 
@@ -187,8 +191,7 @@ $env:DIGITAL_LIFE_DEV = '<repo>/shared'
 ## 构建
 
 ```powershell
-python tools/build_unified_plugin.py   # 单插件版
-python tools/build_plugins.py          # 过渡期两个独立插件
+python tools/build_unified_plugin.py
 ```
 
 输出在 `dist/`，包含 zip、`.sha256` 与 `RELEASE*.json`。清单文件数从最终 ZIP
