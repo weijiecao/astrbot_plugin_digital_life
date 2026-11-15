@@ -8,7 +8,23 @@ import shutil
 import sqlite3
 import uuid
 from pathlib import Path
+from contextlib import contextmanager
 from astrbot_memory_input.native import digest, Origin, Record
+
+
+@contextmanager
+def managed_database(*args, **kwargs):
+    """短期连接明确管理事务和句柄，不把连接关闭留给垃圾回收。
+
+    sqlite3.Connection 的 with 协议只负责提交/回滚；Windows 下遗漏 close
+    会使备份重命名和临时目录清理失败。finally 同时覆盖查询与事务异常。
+    """
+    connection = sqlite3.connect(*args, **kwargs)
+    try:
+        with connection:
+            yield connection
+    finally:
+        connection.close()
 
 
 def atomic_json(path, value):
@@ -37,13 +53,13 @@ def checksum(path):
 
 def snapshot(source, target):
     # SQLite backup 包含 WAL 已提交内容；不直接复制活动 DB 文件。
-    with sqlite3.connect(Path(source).resolve().as_uri() + "?mode=ro", uri=True) as src:
-        with sqlite3.connect(str(target)) as dst:
+    with managed_database(Path(source).resolve().as_uri() + "?mode=ro", uri=True) as src:
+        with managed_database(str(target)) as dst:
             src.backup(dst)
 
 
 def validate_database(path, required):
-    with sqlite3.connect(Path(path).resolve().as_uri() + "?mode=ro", uri=True) as db:
+    with managed_database(Path(path).resolve().as_uri() + "?mode=ro", uri=True) as db:
         if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise ValueError("database integrity failed")
         if db.execute("PRAGMA foreign_key_check").fetchone():
@@ -174,10 +190,10 @@ class GenerationStore:
         validate_database(
             base / "native_input_journal.sqlite3", ("native_record", "native_stream")
         )
-        with sqlite3.connect(
+        with managed_database(
             (base / "shadow.sqlite3").as_uri() + "?mode=ro", uri=True
         ) as target:
-            with sqlite3.connect(
+            with managed_database(
                 (base / "native_input_journal.sqlite3").as_uri() + "?mode=ro", uri=True
             ) as journal:
                 tables = {

@@ -6,7 +6,7 @@ import sqlite3
 from dataclasses import asdict
 from pathlib import Path
 from astrbot_memory_input.native import Origin, Record, canonical, digest
-from .storage import snapshot, checksum
+from .storage import snapshot, checksum, managed_database
 from astrbot_memory_input.journal import ImportConflict
 
 
@@ -115,7 +115,7 @@ class LegacyMigration:
                 temp.replace(dest)
             else:
                 temp.unlink()
-            with sqlite3.connect(str(dest)) as db:
+            with managed_database(str(dest)) as db:
                 db.row_factory = sqlite3.Row
                 scopes = self.inventory(db)
             if not isinstance(mapping, dict):
@@ -206,7 +206,7 @@ class LegacyMigration:
             raise ValueError("migration snapshot hash changed")
         start = row["watermark"]
         limit = max(1, min(int(limit), 1000))
-        with sqlite3.connect(str(file)) as db:
+        with managed_database(str(file)) as db:
             db.row_factory = sqlite3.Row
             rows = self.rows(db, start, limit)
         mapping = json.loads(row["mapping"])

@@ -189,7 +189,7 @@ class ApplicationService:
                 self.phase = "SNAPSHOT"
                 return await self.db(
                     lambda: p.generations.create_backup(
-                        {"mode": p.mode, "plugin_version": "0.7.0-dev.1"}
+                        {"mode": p.mode, "plugin_version": "0.7.0-dev.2"}
                     )
                 )
             await self.db(

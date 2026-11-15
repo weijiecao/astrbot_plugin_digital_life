@@ -1,10 +1,14 @@
 # 数字生命：统一 AstrBot 插件
 
-开发版 `0.7.0-dev.1`，基于 `abbfceae5b2a0ef4659310a2c1d7791946d48f3c`（alpha.6）。新增迁移、实时追加、恢复切换、偏好排序、短指代和主动请求记忆入口。当前交付是可安装的开发版；真实 AstrBot/NapCat/Windows 及长期运行验收仍需完成，未发布 RC。
+开发版 `0.7.0-dev.2`，基于 `abbfceae5b2a0ef4659310a2c1d7791946d48f3c`（alpha.6）。新增迁移、实时追加、恢复切换、偏好排序、短指代和主动请求记忆入口。当前交付是可安装的开发版；真实 AstrBot/NapCat/Windows 及长期运行验收仍需完成，未发布 RC。
+
+## dev.2 修复
+
+基于远端 `4c07d5d53f79ea3187ab6aefd6177a66fa805f6a`（与 dev.1 源码树一致）。备份、校验、迁移和测试夹具的短期 SQLite 连接现在明确关闭，同时保留提交/回滚语义。新增测试持有连接强引用，检查成功、异常和后续文件清理均不依赖 GC；这不代替 Windows 实机结果。
 
 ## 安装和模式
 
-构建：在仓库根目录执行 `python tools/build_unified_plugin.py`。安装：AstrBot WebUI → 插件 → 上传 `dist/astrbot_plugin_digital_life-0.7.0-dev.1.zip`。安装包包含全部共享模块，不需要设置 `DIGITAL_LIFE_DEV`。
+构建：在仓库根目录执行 `python tools/build_unified_plugin.py`。安装：AstrBot WebUI → 插件 → 上传 `dist/astrbot_plugin_digital_life-0.7.0-dev.2.zip`。安装包包含全部共享模块，不需要设置 `DIGITAL_LIFE_DEV`。
 
 从 alpha.6 升级后请完整重启 AstrBot 服务；仅热重载不能可靠清除既有顶层共享模块的 Python 导入缓存。
 

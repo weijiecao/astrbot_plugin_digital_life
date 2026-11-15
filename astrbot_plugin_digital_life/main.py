@@ -322,7 +322,7 @@ class DigitalLifePlugin(Star):
         """Return a secret-free snapshot; never touches SQLite from the loop."""
         return {
             "schema_version": 1,
-            "plugin_version": "0.7.0-dev.1",
+            "plugin_version": "0.7.0-dev.2",
             "config_generation": self.config_generation,
             "store_generation": self.store_generation,
             "mode": self.mode,

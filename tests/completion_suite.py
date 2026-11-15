@@ -13,6 +13,7 @@ import threading
 import types
 import unittest
 from dataclasses import asdict, replace
+from contextlib import contextmanager, closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -64,6 +65,7 @@ web.error_response = lambda message, **kwargs: {"error": message, **kwargs}
 web.request = types.SimpleNamespace(query={})
 sys.modules["astrbot.core.agent.message"].TextPart = TextPart
 mod = importlib.import_module("astrbot_plugin_digital_life.main")
+from astrbot_plugin_digital_life.application import storage as storage_module
 from astrbot_plugin_digital_life.application.storage import (
     GenerationStore,
     checksum,
@@ -156,8 +158,16 @@ class Provider:
         )
 
 
+@contextmanager
+def fixture_database(path):
+    # 测试夹具也要明确关闭；closing 与事务上下文各负责一件事。
+    with closing(sqlite3.connect(path)) as database:
+        with database:
+            yield database
+
+
 def old_database(path, extra=False):
-    with sqlite3.connect(path) as db:
+    with fixture_database(path) as db:
         db.executescript(
             """CREATE TABLE dl_capture(seq INTEGER PRIMARY KEY,scope TEXT,event_hash TEXT,
         content TEXT,content_sha TEXT,recorded_at TEXT,state TEXT,linked_source TEXT,linked_title TEXT);
@@ -183,6 +193,154 @@ def old_database(path, extra=False):
                 ("old-a", "a1", "assistant", "机器人旧回复", "2026-11-15"),
             ],
         )
+
+
+@contextmanager
+def track_sqlite_handles(fail_backup=False):
+    """保留连接强引用，关闭必须来自业务代码，不能靠 GC 恰好及时执行。"""
+    real_connect = sqlite3.connect
+    opened = []
+
+    class TrackedConnection(sqlite3.Connection):
+        explicitly_closed = False
+
+        def close(self):
+            super().close()
+            self.explicitly_closed = True
+
+        def backup(self, target, *args, **kwargs):
+            if fail_backup:
+                raise sqlite3.OperationalError('injected backup failure')
+            return super().backup(target, *args, **kwargs)
+
+    def connect(*args, **kwargs):
+        kwargs['factory'] = TrackedConnection
+        connection = real_connect(*args, **kwargs)
+        opened.append(connection)
+        return connection
+
+    try:
+        with patch.object(sqlite3, 'connect', side_effect=connect):
+            yield opened
+    finally:
+        # 即使断言失败也释放测试资源，避免错误被临时目录清理失败掩盖。
+        for connection in opened:
+            connection.close()
+
+
+class SqliteHandleTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.store = V15Store(self.root / 'shadow.sqlite3')
+        self.service = NativeInputService(
+            self.store, self.root / 'native_input_journal.sqlite3',
+            journal_factory=UnifiedJournal)
+        self.source = self.root / '旧库.sqlite3'
+        old_database(self.source)
+
+    def tearDown(self):
+        self.service.close()
+        self.store.close()
+        self.tmp.cleanup()
+
+    def assert_closed(self, connections):
+        self.assertTrue(connections, 'test did not observe any connection')
+        self.assertTrue(all(c.explicitly_closed for c in connections),
+                        'SQLite connection left open after operation returned')
+        for connection in connections:
+            with self.assertRaises(sqlite3.ProgrammingError):
+                connection.execute('SELECT 1')
+
+    def test_snapshot_success_releases_both_files_before_return(self):
+        target = self.root / '副本.sqlite3'
+        with track_sqlite_handles() as opened:
+            storage_module.snapshot(self.source, target)
+            self.assertEqual(len(opened), 2)
+            self.assert_closed(opened)
+            # Windows 会拒绝重命名/删除仍被 SQLite 占用的文件。
+            renamed = target.with_name('renamed.sqlite3')
+            target.rename(renamed)
+            renamed.unlink()
+
+    def test_snapshot_destination_open_failure_closes_source(self):
+        with track_sqlite_handles() as opened:
+            with self.assertRaises(sqlite3.OperationalError):
+                storage_module.snapshot(self.source, self.root / 'missing' / 'copy.db')
+            self.assertEqual(len(opened), 1)
+            self.assert_closed(opened)
+
+    def test_snapshot_backup_failure_closes_both_connections(self):
+        with track_sqlite_handles(fail_backup=True) as opened:
+            with self.assertRaisesRegex(sqlite3.OperationalError, 'injected'):
+                storage_module.snapshot(self.source, self.root / 'failed.db')
+            self.assertEqual(len(opened), 2)
+            self.assert_closed(opened)
+
+    def test_schema_validation_success_and_failure_close_connection(self):
+        for required in [('dl_capture',), ('absent_table',)]:
+            with track_sqlite_handles() as opened:
+                if required[0] == 'dl_capture':
+                    storage_module.validate_database(self.source, required)
+                else:
+                    with self.assertRaises(ValueError):
+                        storage_module.validate_database(self.source, required)
+                self.assert_closed(opened)
+
+    def test_complete_backup_and_cross_receipt_validation_close_connections(self):
+        self.service.submit_message(message(), ORIGIN)
+        generations = GenerationStore(self.root)
+        with track_sqlite_handles() as opened:
+            backup = generations.create_backup({})
+            self.assert_closed(opened)
+        path = self.root / 'backups' / backup['id']
+        with closing(sqlite3.connect(path / 'shadow.sqlite3')) as db:
+            with db:
+                db.execute('DELETE FROM native_input_inbox')
+        manifest = read_json(path / 'manifest.json')
+        manifest['files']['shadow.sqlite3'] = checksum(path / 'shadow.sqlite3')
+        atomic_json(path / 'manifest.json', manifest)
+        with track_sqlite_handles() as opened:
+            with self.assertRaisesRegex(ValueError, 'receipt mismatch'):
+                generations.validate_backup(backup['id'])
+            self.assert_closed(opened)
+
+    def test_migration_snapshot_and_batch_close_read_connections(self):
+        migration = LegacyMigration(self.store, self.service, self.root)
+        with track_sqlite_handles() as opened:
+            run = migration.create(self.source, {'old-a': asdict(ORIGIN)})
+            migration.batch(run['id'])
+            self.assert_closed(opened)
+
+    def test_migration_invalid_source_closes_before_exception(self):
+        invalid = self.root / 'unsupported.sqlite3'
+        with closing(sqlite3.connect(invalid)) as db:
+            db.execute('CREATE TABLE other(value TEXT)')
+        migration = LegacyMigration(self.store, self.service, self.root)
+        with track_sqlite_handles() as opened:
+            with self.assertRaisesRegex(ValueError, 'supported legacy'):
+                migration.create(invalid, {})
+            self.assert_closed(opened)
+
+    def test_fixture_creation_closes_its_connection(self):
+        with track_sqlite_handles() as opened:
+            old_database(self.root / 'fixture.sqlite3')
+            self.assert_closed(opened)
+
+
+    def test_managed_connection_preserves_commit_and_rollback(self):
+        path = self.root / 'transactions.sqlite3'
+        with track_sqlite_handles() as opened:
+            with storage_module.managed_database(path) as db:
+                db.execute('CREATE TABLE records(value INTEGER)')
+                db.execute('INSERT INTO records VALUES(1)')
+            with self.assertRaisesRegex(RuntimeError, 'rollback'):
+                with storage_module.managed_database(path) as db:
+                    db.execute('INSERT INTO records VALUES(2)')
+                    raise RuntimeError('rollback')
+            with storage_module.managed_database(path) as db:
+                self.assertEqual(db.execute('SELECT value FROM records').fetchall(), [(1,)])
+            self.assert_closed(opened)
 
 
 class JournalTests(unittest.TestCase):
@@ -265,7 +423,7 @@ class JournalTests(unittest.TestCase):
         old.deliver(self.service.inbox)
         old.close()
         # 模拟尚未升级的 journal：移除仅新版本拥有的表和标记。
-        with sqlite3.connect(self.root / "native_input_journal.sqlite3") as db:
+        with fixture_database(self.root / "native_input_journal.sqlite3") as db:
             for table in [
                 "input_canonical",
                 "input_alias",
@@ -328,7 +486,7 @@ class JournalTests(unittest.TestCase):
         m.batch(one["id"])
         m.release(one["id"])
         before = self.count()
-        with sqlite3.connect(source) as db:
+        with fixture_database(source) as db:
             text = "第二天去爬山。"
             db.execute(
                 "INSERT INTO dl_capture VALUES(?,?,?,?,?,?,?,?,?)",
@@ -355,7 +513,7 @@ class JournalTests(unittest.TestCase):
         m = LegacyMigration(self.store, self.service, self.root)
         one = m.create(source, {"old-a": asdict(ORIGIN)})
         m.batch(one["id"])
-        with sqlite3.connect(source) as db:
+        with fixture_database(source) as db:
             db.execute(
                 "UPDATE dl_capture SET content=?,content_sha=? WHERE seq=1",
                 ("新文本", hashlib.sha256("新文本".encode()).hexdigest()),
@@ -371,7 +529,7 @@ class JournalTests(unittest.TestCase):
         gen = GenerationStore(self.root)
         backup = gen.create_backup({})
         path = self.root / "backups" / backup["id"]
-        with sqlite3.connect(path / "shadow.sqlite3") as db:
+        with fixture_database(path / "shadow.sqlite3") as db:
             db.execute("DELETE FROM native_input_inbox")
         manifest = read_json(path / "manifest.json")
         manifest["files"]["shadow.sqlite3"] = checksum(path / "shadow.sqlite3")
@@ -483,7 +641,7 @@ os._exit(19)
         gen = GenerationStore(self.root)
         backup = gen.create_backup({})
         base = self.root / "backups" / backup["id"]
-        with sqlite3.connect(base / "shadow.sqlite3") as db:
+        with fixture_database(base / "shadow.sqlite3") as db:
             db.execute("UPDATE meta SET value='999' WHERE key='schema_version'")
         manifest = read_json(base / "manifest.json")
         manifest["files"]["shadow.sqlite3"] = checksum(base / "shadow.sqlite3")
@@ -499,7 +657,7 @@ os._exit(19)
         first = m.create(source, {"old-a": asdict(ORIGIN)})
         m.batch(first["id"])
         m.release(first["id"])
-        with sqlite3.connect(source) as db:
+        with fixture_database(source) as db:
             db.execute("INSERT INTO summaries VALUES('第二份摘要')")
         second = m.create(source, {"old-a": asdict(ORIGIN)})
         result = m.batch(second["id"])
