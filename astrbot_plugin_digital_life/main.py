@@ -117,6 +117,19 @@ def _load_json_file(path: Path) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+try:
+    from .application.storage import GenerationStore
+    from .application.service import ApplicationService
+    from .application.migration import LegacyMigration
+    from .application.compatibility import FollowupContext
+except ImportError:
+    from application.storage import GenerationStore
+    from application.service import ApplicationService
+    from application.migration import LegacyMigration
+    from application.compatibility import FollowupContext
+from astrbot_memory_input.unified import UnifiedJournal
+
+
 class DigitalLifePlugin(Star):
     def __init__(self, context: Context, config=None):
         super().__init__(context)
@@ -153,6 +166,21 @@ class DigitalLifePlugin(Star):
                 self.ownership_status = "blocked-locked"
                 self.ownership_error = str(exc)
                 self.ownership_blocked = True
+        try:
+            self.generations = GenerationStore(self.base, recover=not self.ownership_blocked)
+        except Exception:
+            if self._ownership is not None:
+                self._ownership.release()
+            raise
+        self.data_dir = self.generations.active
+        self.commit_state_path = self.data_dir / 'commit_state.json'
+        self.log = self.data_dir / 'shadow_events.jsonl'
+        options = config if isinstance(config, dict) else {}
+        self.preference_rank_enabled = options.get('preference_rank_enabled', True) is True
+        self.followup = FollowupContext(options.get('followup_enabled', True) is True)
+        self.proactive_enabled = options.get('proactive_enabled', False) is True
+        self.application = ApplicationService(self)
+        self.migration = None
         self.config_error = None
         try:
             self.cfg = resolve_config(config if isinstance(config, dict) else {},
@@ -183,7 +211,7 @@ class DigitalLifePlugin(Star):
         self.memory_budget = self.cfg.memory_budget_tokens
         self.console_read_only = self.cfg.console_read_only
         self.config_generation = 1
-        self.store_generation = 1
+        self.store_generation = self.generations.current["epoch"]
         self.last_capture_at = None
         self.last_commit_at = self._load_commit_time()
         self.last_commit_observed_at = None
@@ -263,8 +291,8 @@ class DigitalLifePlugin(Star):
             api = ConsoleApi(DEV, root, read_only=(self.console_read_only
                                                    or self.ownership_blocked),
                              plugin_name="astrbot_plugin_digital_life",
-                             data_dir=self.base,
-                             status_provider=self.status_async)
+                             data_dir=self.data_dir,
+                             status_provider=self.status_async, application=self.application)
             count = api.register(register)
             if not count:
                 raise RuntimeError("AstrBot web API helpers unavailable")
@@ -294,7 +322,7 @@ class DigitalLifePlugin(Star):
         """Return a secret-free snapshot; never touches SQLite from the loop."""
         return {
             "schema_version": 1,
-            "plugin_version": "0.6.0-alpha.6",
+            "plugin_version": "0.7.0-dev.1",
             "config_generation": self.config_generation,
             "store_generation": self.store_generation,
             "mode": self.mode,
@@ -310,7 +338,8 @@ class DigitalLifePlugin(Star):
                                  else "lazy"),
             "allowed_senders": len(self.allowed),
             "legacy_data_dir": self.legacy_data_dir,
-            "data_dir": str(self.base),
+            "data_dir": str(self.data_dir),
+            "reconciliation_pending": getattr(self,"_reconciliation_pending",0),
             "input_modes": dict(self.input_modes),
             "inbox": dict(self._inbox_snapshot),
             "inbox_error": self._inbox_error,
@@ -334,6 +363,8 @@ class DigitalLifePlugin(Star):
         if self.service is not None:
             try:
                 inbox = dict(self.service.inbox.counts())
+                journal = getattr(self.service, 'journal', None)
+                self._reconciliation_pending = journal.pending() if isinstance(journal, UnifiedJournal) else 0
                 stats = getattr(self.service, "stats", {}) or {}
                 marker = int(stats.get("created", 0)) + int(stats.get("attached", 0))
             except Exception as exc:
@@ -553,6 +584,8 @@ class DigitalLifePlugin(Star):
         """在宿主线程池线程里打开引擎与输入服务（sqlite 连接不跨线程）。"""
         if self.ownership_blocked:
             return False
+        if self.application.busy and not self.application.opening:
+            return False
         if self.lifecycle in ("CLOSING", "CLOSED"):
             return False
         if self.store is not None:
@@ -566,24 +599,35 @@ class DigitalLifePlugin(Star):
                 # 没有精确分词器时不冒充预算：观察记录里 items 会为空。
                 self.counter_failed = True
         try:
-            store = V15Store(str(self.base / "shadow.sqlite3"))
+            store = V15Store(str(self.data_dir / "shadow.sqlite3"))
             judge = self._build_judge(store)
             service = NativeInputService(
-                store, journal_path_for(self.base), judge=judge,
+                store, journal_path_for(self.data_dir), judge=judge,
                 judge_revision=revision_for(judge, "none"),
-                on_commit=self._record_commit)
+                on_commit=self._record_commit, journal_factory=UnifiedJournal)
         except Exception as exc:
             self.error = type(exc).__name__ + ": " + str(exc)
             return False
         self.store = store
         self.engine = MemoryEngine(store)
+        self.engine.preference_rank_enabled = self.preference_rank_enabled
         self.service = service
+        self.migration = LegacyMigration(store, service, self.data_dir)
+        store.db.execute('CREATE TABLE IF NOT EXISTS proactive_receipts(scope TEXT,request_id TEXT,query TEXT,PRIMARY KEY(scope,request_id))')
+        store.db.commit()
+        # journal 先写的撤回屏障在启动时补齐业务失效，避免中断重放复活。
+        for (key,) in service.journal.db.execute('SELECT key FROM input_tombstone').fetchall():
+            row=store.db.execute('SELECT scope_id,source_seq FROM native_input_inbox WHERE key=?',(key,)).fetchone()
+            if row:
+                with store.unit_of_work():
+                    self.engine.delete_source(row[0],row[1])
+                    store.db.execute("UPDATE native_input_inbox SET state='WITHDRAWN' WHERE key=?",(key,))
         if self.output_mode == "inject":
             if MemoryOutputService is None or OutputRequest is None:
                 self.output_error = "output module unavailable"
             else:
                 try:
-                    self.output_service = MemoryOutputService(self.engine, self.counter)
+                    self.output_service = MemoryOutputService(self.engine, self.counter, generation=self.store_generation)
                 except Exception as exc:
                     self.output_error = type(exc).__name__ + ": " + str(exc)
         return True
@@ -633,7 +677,7 @@ class DigitalLifePlugin(Star):
         return (("event:" + umo) if isinstance(umo, str) else None), None
 
     def _submit(self, history, origin, mode):
-        if self.lifecycle != "RUNNING":
+        if not self._commit_allowed():
             return
         if not self._ensure():
             return
@@ -644,8 +688,16 @@ class DigitalLifePlugin(Star):
             else:
                 self.input_modes["skipped"] += 1
 
+    def _append(self, message, origin):
+        if not self._commit_allowed() or not self._ensure():
+            if self.application.busy:self.application.note_gap(origin)
+            return False
+        self.service.submit_message(message, origin)
+        self.followup.remember(origin, message)
+        return True
+
     def _observe_work(self, scope, query, budget):
-        if self.lifecycle != "RUNNING" or not self._ensure():
+        if not self._commit_allowed() or not self._ensure():
             return None
         packet = self.engine.build_rendered_context(
             scope, query, budget.memory_tokens, self.counter, host_budget=budget)
@@ -654,9 +706,9 @@ class DigitalLifePlugin(Star):
                 "rendered_tokens": packet.get("rendered_tokens"),
                 "host_memory_tokens": budget.memory_tokens}
 
-    def _output_work(self, req, scope, query, provider=None):
+    def _output_work(self, req, scope, query, provider=None, origin=None, request_id=None):
         """在宿主线程池里完成检索、证据复验和临时内容块安装。"""
-        if (self.mode != "ASSIST" or self.lifecycle != "RUNNING"
+        if (self.mode != "ASSIST" or not self._commit_allowed()
                 or not self._ensure()):
             return None
         if self.output_service is None or OutputRequest is None:
@@ -667,11 +719,16 @@ class DigitalLifePlugin(Star):
                     "host_memory_tokens": 0}
         try:
             budget = self.host_budget_for(req, provider)
-            request = OutputRequest(uuid.uuid4().hex, scope, query,
-                                    self.memory_budget)
+            retrieval = self.followup.resolve(origin, query) if origin is not None else query
+            request = OutputRequest(request_id or uuid.uuid4().hex, scope, query,
+                                    self.memory_budget, self.store_generation,
+                                    retrieval if retrieval != query else None)
             output = self.output_service.prepare(request, host_budget=budget)
             # 提交前按当前请求复验预算：其他插件可能在准备期间追加内容。
             final = self.host_budget_for(req, provider)
+            if not self._commit_allowed():
+                self.output_service.adapter.clear(req)
+                return None
             receipt = self.output_service.inject(req, output, request,
                                                  host_budget=final)
             return {"items": len(output.items),
@@ -700,7 +757,7 @@ class DigitalLifePlugin(Star):
 
     async def _reconcile_ownership(self) -> bool:
         """Re-check the old Star and the data-directory lock before work."""
-        if self.lifecycle != "RUNNING":
+        if self.lifecycle != "RUNNING" or self.application.busy:
             return False
         loop = self.loop
         if loop is None or loop.is_closed():
@@ -740,6 +797,9 @@ class DigitalLifePlugin(Star):
                 self.ownership_error = str(exc)
                 return False
             self._ownership = lock
+            # 等待占用期间，前一个实例可能已恢复到新代次，不能打开旧缓存路径。
+            self.generations = GenerationStore(self.base)
+            self.application._paths()
         self.ownership_blocked = False
         self.ownership_status = "owned"
         self.ownership_error = None
@@ -754,7 +814,7 @@ class DigitalLifePlugin(Star):
         if self.console_api is not None:
             self.console_api.read_only = self.console_read_only
             if self.console_api.console is not None:
-                self.console_api.console.read_only = self.console_read_only
+                self.console_api.console.read_only = True
         return True
 
     async def _ownership_loop(self):
@@ -773,11 +833,23 @@ class DigitalLifePlugin(Star):
 
     def _commit_allowed(self) -> bool:
         """Synchronous fence checked on the database thread before commit."""
-        return self.lifecycle == "RUNNING" and not self.ownership_blocked
+        if self.lifecycle != 'RUNNING' or self.ownership_blocked or self.application.busy:
+            return False
+        # 数据库队列可能晚于模型后的检查：这里必须重新读宿主的当前活动状态。
+        try:
+            active = legacy_plugin_active(self.context)
+        except Exception:
+            return False
+        if active:
+            self.ownership_blocked = True
+            self.ownership_status = 'blocked-legacy'
+            self.ownership_error = 'astrbot_plugin_memory_shadow is active'
+            return False
+        return True
 
     async def _pump_guard(self) -> bool:
         """Last check immediately before a background tick can write."""
-        if self.lifecycle != "RUNNING":
+        if self.lifecycle != "RUNNING" or self.application.busy:
             return False
         try:
             legacy = legacy_plugin_active(self.context)
@@ -804,7 +876,7 @@ class DigitalLifePlugin(Star):
             self._pump_stop_scheduled = False
 
     def _start_pump(self):
-        if (self.ownership_blocked or self.mode == "OFF"
+        if (self.application.busy or self.ownership_blocked or self.mode == "OFF"
                 or self.lifecycle != "RUNNING"
                 or self.pump is not None or self.service is None):
             return
@@ -837,6 +909,9 @@ class DigitalLifePlugin(Star):
 
     @filter.event_message_type(filter.EventMessageType.PRIVATE_MESSAGE)
     async def capture(self, event):
+        if self.application.busy:
+            self.application.note_gap(None)
+            return
         if self.lifecycle != "RUNNING":
             return
         if not await self._reconcile_ownership():
@@ -857,7 +932,7 @@ class DigitalLifePlugin(Star):
         conversation_id, history, host_persona, mode = await self._snapshot(event)
         if self.lifecycle != "RUNNING":
             return
-        if history is None:
+        if history is None and event_message(event) is None:
             with self.lock:
                 self.input_modes["skipped"] += 1
             return
@@ -875,7 +950,12 @@ class DigitalLifePlugin(Star):
         if self.lifecycle != "RUNNING":
             return
         try:
-            await self.loop.run_in_executor(self.pool, self._submit, history, origin, mode)
+            # 实时消息先独立落 journal；历史仍走完整快照校验，不能伪装为追加。
+            current = event_message(event)
+            if current:
+                await self.loop.run_in_executor(self.pool, self._append, current[0], origin)
+            if history is not None and mode == 'conversation':
+                await self.loop.run_in_executor(self.pool, self._submit, history, origin, mode)
             self.last_capture_at = time.time()
         except Exception as exc:
             self.last_error = "%s: %s" % (type(exc).__name__, exc)
@@ -915,6 +995,12 @@ class DigitalLifePlugin(Star):
         origin = build_origin(event, persona=persona, conversation=conversation_id)
         if origin is None:
             return
+        current = event_message(event)
+        if current and not text.startswith(('/', '!')):
+            try:
+                await self.loop.run_in_executor(self.pool, self._append, current[0], origin)
+            except Exception as exc:
+                self.last_error = type(exc).__name__ + ': ' + str(exc)
         provider = await self._active_provider(event)
         if self.lifecycle != "RUNNING":
             return
@@ -923,7 +1009,7 @@ class DigitalLifePlugin(Star):
             if self.mode == "ASSIST" and self.output_mode == "inject":
                 observed = await self.loop.run_in_executor(
                     self.pool, self._output_work, req, origin.scope_id, query,
-                    provider)
+                    provider, origin)
             else:
                 observed = await self.loop.run_in_executor(
                     self.pool, self._observe_work, origin.scope_id, query, budget)
@@ -969,10 +1055,42 @@ class DigitalLifePlugin(Star):
         if self.lifecycle != "CLOSED":
             raise RuntimeError(self.terminate_error or "cleanup incomplete")
 
+    async def inject_proactive(self, event, request, request_id, trigger_kind='scheduled'):
+        if not self.proactive_enabled or not isinstance(request_id,str) or not request_id.strip():
+            return {'status':'DISABLED'}
+        if trigger_kind not in ('scheduled','manual') or not self._sender_allowed(event):
+            return {'status':'REJECTED'}
+        if not await self._reconcile_ownership():
+            return {'status':'BLOCKED'}
+        cid, persona = await self._conversation_identity(event)
+        persona = self._persona_for(persona)
+        if not cid or not persona:
+            return {'status':'REJECTED'}
+        origin = build_origin(event, persona=persona, conversation=cid)
+        query = getattr(request,'prompt',None)
+        if origin is None or not isinstance(query,str) or not query.strip():
+            return {'status':'REJECTED'}
+        provider = await self._active_provider(event)
+        def work():
+            if not self._commit_allowed() or not self._ensure():
+                return {'status':'BLOCKED'}
+            prior=self.store.db.execute('SELECT query FROM proactive_receipts WHERE scope=? AND request_id=?',
+                                        (origin.scope_id,request_id)).fetchone()
+            if prior:
+                return {'status':'DUPLICATE' if prior[0]==query else 'CONFLICT'}
+            result=self._output_work(request,origin.scope_id,query,provider,origin,request_id)
+            if result and result.get('output_status') in ('INJECTED','EMPTY','UNCHANGED'):
+                with self.store.unit_of_work():
+                    self.store.db.execute('INSERT INTO proactive_receipts VALUES(?,?,?)',
+                                          (origin.scope_id,request_id,query))
+            return result or {'status':'BLOCKED'}
+        return await asyncio.get_running_loop().run_in_executor(self.pool,work)
+
     async def _terminate(self):
         self.terminate_error = None
         self._cleanup_errors = []
         try:
+            await self.application.wait_idle()
             if self._ownership_task is not None:
                 self._ownership_task.cancel()
                 try:

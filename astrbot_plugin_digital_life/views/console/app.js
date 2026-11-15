@@ -272,7 +272,59 @@ document.getElementById('drawer-close').addEventListener('click', closeDrawer);
 
 /* ---------------------------------------------------------------- 页面框架 */
 
+/* 统一管理只调用 application service；旧数据页面保留只读诊断。 */
+let managementStop = false;
+let managementDraft = {source:'', sourceId:'', mapping:'{}'};
+async function renderUnified() {
+  const s = await api('/runtime/status');
+  const disabled = s.ownership !== 'owned' || s.maintenance?.busy || s.management_read_only;
+  const attr = disabled ? 'disabled' : '';
+  const migrations = (s.migrations || []).map(m => `<div class="list-item">
+    <div class="mono small">${esc(m.id)}</div><p class="mono small">来源标识：${esc(m.source_id)}</p>
+    <p>${esc(m.state)} · ${m.watermark}/${m.total} · ${esc(JSON.stringify(m.counts))}</p>
+    <p class="muted">${esc(m.error || "")}</p>
+    <p class="muted">来源作用域：${esc(JSON.stringify(m.source_scopes || {}))}</p>
+    <button class="btn small" data-act="unified-batch" data-id="${esc(m.id)}" ${attr}>继续迁移</button>
+    <button class="btn small" data-act="unified-map" data-id="${esc(m.id)}" ${attr}>应用下方身份映射</button>
+    <button class="btn small" data-act="unified-release" data-id="${esc(m.id)}" ${attr}>允许后台整理</button></div>`).join('');
+  const backups = (s.backups || []).map(b => `<div class="list-item">
+    <span class="mono small">${esc(b.id)}</span> · ${b.files} 个文件
+    <button class="btn small" data-act="unified-verify" data-id="${esc(b.id)}" ${attr}>校验</button>
+    <button class="btn small" data-act="unified-restore" data-id="${esc(b.id)}" ${attr}>恢复运行库</button></div>`).join('');
+  view.innerHTML = `<section class="panel management-panel"><h2>运行状态</h2>
+    <p>模式 ${esc(s.mode)} · 所有权 ${esc(s.ownership)} · 数据代次 ${esc(s.store_generation)}</p>
+    <p>整理模型 ${esc(s.provider_status)} · 队列 ${esc(JSON.stringify(s.inbox))} · 待定位 ${s.reconciliation_pending || 0}</p>
+    <p>维护 ${esc(s.maintenance?.phase)} · ${esc(s.maintenance?.error || s.error || s.ownership_error || '')}</p>
+    <p class="muted">没有整理模型时原话只保存入队。恢复暂停期间的采集缺口保留计数，后续可用的完整历史快照将尝试补录。</p>
+    <p>采集缺口 ${esc(JSON.stringify(s.gaps || {}))}</p></section>
+    <section class="panel management-panel"><h2>旧基座迁移</h2>
+    <p>先生成冻结快照，再配置旧作用域到平台、机器人、用户、人格和会话的映射。未映射记录会保留隔离。</p>
+    <label>旧库文件路径 / 旧 shadow 数据目录<input id="migration-source" value="${esc(managementDraft.source)}"></label>
+    <label>来源标识（首次可留空；旧库搬家时沿用原标识）<input id="migration-source-id" value="${esc(managementDraft.sourceId)}"></label>
+    <label>身份映射 JSON<textarea id="migration-map" rows="6">${esc(managementDraft.mapping)}</textarea></label>
+    <p class="muted">格式：{"旧scope":{"platform":"aiocqhttp","bot":"机器人ID","user":"用户ID","persona":"人格ID","conversation":"legacy"}}</p>
+    <button class="btn" data-act="unified-create" ${attr}>创建旧基座迁移</button>
+    <button class="btn" data-act="unified-shadow" ${attr}>导入已停用的 shadow 数据组</button>
+    <button class="btn ghost" data-act="unified-pause">本批完成后暂停</button>
+    <p class="muted">迁移只导入原文与历史产物。点击“允许后台整理”后才会调用已配置模型。</p>${migrations}</section>
+    <section class="panel management-panel"><h2>一致备份与恢复</h2>
+    <button class="btn" data-act="unified-backup" ${attr}>创建完整备份</button>
+    <p class="muted">恢复前自动备份当前数据，切换到独立数据目录；失败回退，旧目录保留。</p>${backups}</section>
+    <section class="panel management-panel"><h2>撤回来源</h2>
+    <label>新引擎 scope<input id="withdraw-scope"></label>
+    <label>来源序号 source_seq<input id="withdraw-seq" type="number" min="1"></label>
+    <button class="btn danger" data-act="unified-withdraw" ${attr}>撤回并使派生证据失效</button>
+    <p class="muted">这是撤回，不是物理删除；原文审计和历史备份仍保留。</p></section>`;
+}
+function saveManagementDraft() {
+  managementDraft.source=$('#migration-source')?.value ?? managementDraft.source;
+  managementDraft.sourceId=$('#migration-source-id')?.value ?? managementDraft.sourceId;
+  managementDraft.mapping=$('#migration-map')?.value || managementDraft.mapping;
+}
+async function runtimePost(name,body={}) { return api('/runtime/'+name,{method:'POST',body}); }
+
 const PAGES = {
+  unified: { title: '统一管理', sub: '迁移、运行状态、整组备份与恢复切换', render: renderUnified },
   overview: {
     title: '总览',
     sub: '基座、影子引擎与输入链路的当前状态',
@@ -1167,6 +1219,30 @@ const actions = {
     await renderMaintenance();
   },
 };
+
+Object.assign(actions, {
+  'unified-create': async () => { saveManagementDraft(); await runtimePost('migration_create',{source:managementDraft.source,mapping:JSON.parse(managementDraft.mapping),source_id:managementDraft.sourceId || undefined}); await renderUnified(); },
+  'unified-map': async el => { saveManagementDraft(); await runtimePost('migration_mapping',{id:el.dataset.id,mapping:JSON.parse(managementDraft.mapping)}); await renderUnified(); },
+  'unified-batch': async el => { saveManagementDraft(); managementStop=false; let result;
+    do { result=await runtimePost('migration_batch',{id:el.dataset.id,limit:200}); await renderUnified(); }
+    while(!managementStop && result.state!=='READY'); },
+  'unified-pause': async () => { managementStop=true; toast('将在本批完成后暂停，进度已保存','ok'); },
+  'unified-release': async el => {
+    const answer=await confirmDialog({title:'允许整理迁移原文',message:'后台将使用已配置的模型处理已导入原文，可能产生模型调用费用。',danger:false});
+    if(answer.ok) { await runtimePost('migration_release',{id:el.dataset.id}); await renderUnified(); } },
+  'unified-shadow': async () => { saveManagementDraft();
+    const answer=await confirmDialog({title:'导入旧 shadow 数据组',message:'请确认来源实例已经停用，不再写入。将冻结业务库和输入日志，校验后列入备份列表。',danger:false});
+    if(answer.ok) { await runtimePost('shadow_import',{source:managementDraft.source,source_stopped:true}); await renderUnified(); } },
+  'unified-backup': async () => { saveManagementDraft(); await runtimePost('backup'); await renderUnified(); },
+  'unified-verify': async el => { await runtimePost('verify_backup',{id:el.dataset.id}); toast('完整备份校验通过','ok'); },
+  'unified-restore': async el => {
+    const answer=await confirmDialog({title:'恢复运行库',message:'将暂停采集和注入，备份当前数据，再切换整组数据库。切换后会清空短指代缓存。',okText:'恢复并切换'});
+    if(answer.ok) { saveManagementDraft(); await runtimePost('restore',{id:el.dataset.id}); await renderUnified(); } },
+  'unified-withdraw': async () => {
+    const scope=$('#withdraw-scope').value,source_seq=Number($('#withdraw-seq').value);
+    const answer=await confirmDialog({title:'撤回来源',message:'该来源不再参与回忆，其派生证据将失效。原文审计仍保留。'});
+    if(answer.ok) { await runtimePost('withdraw',{scope,source_seq}); toast('来源已撤回','ok'); } }
+});
 
 async function refreshCurrent() {
   if (PAGES[current]) await PAGES[current].render();

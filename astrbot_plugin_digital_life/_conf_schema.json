@@ -53,5 +53,20 @@
     "description": "控制台只读，禁用备份/恢复/删除/VACUUM。",
     "type": "bool",
     "default": false
+  },
+  "preference_rank_enabled": {
+    "description": "对已通过证据校验的候选优先排列偏好，不自动生成偏好事实。",
+    "type": "bool",
+    "default": true
+  },
+  "followup_enabled": {
+    "description": "同用户、人格、会话内，五分钟内的短指代使用最近明确话题作为检索锚点。",
+    "type": "bool",
+    "default": true
+  },
+  "proactive_enabled": {
+    "description": "允许其他宿主组件显式调用 inject_proactive；本插件不主动发送消息。",
+    "type": "bool",
+    "default": false
   }
 }

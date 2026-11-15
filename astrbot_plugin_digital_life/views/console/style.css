@@ -342,3 +342,10 @@ pre, .code {
   .conn span { display: none; }
   .topbar h1 { font-size: 18px; }
 }
+
+/* 统一管理页沿用控制台面板；长身份/路径在窄屏换行。 */
+.management-panel { padding:24px; margin-bottom:20px; overflow-wrap:anywhere; }
+.management-panel h2 { margin-top:0; }
+.management-panel label { display:block; margin:12px 0; }
+.management-panel input, .management-panel textarea { display:block; width:100%; box-sizing:border-box; margin-top:8px; }
+.management-panel .btn { margin:4px 4px 4px 0; }

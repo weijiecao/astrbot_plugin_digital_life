@@ -229,9 +229,9 @@ class NativeInputService:
 
     def __init__(self, store, journal_path, *, judge=None, encoder=None,
                  judge_revision: str = "v1", deliver_limit: int = 200,
-                 on_commit=None):
+                 on_commit=None, journal_factory=ImportJournal):
         self.store = store
-        self.journal = ImportJournal(journal_path)
+        self.journal = journal_factory(journal_path)
         self.inbox = NativeInputInbox(store)
         self.worker = (NativeInputWorker(self.inbox, judge, encoder=encoder,
                                          judge_revision=judge_revision)
@@ -303,6 +303,14 @@ class NativeInputService:
                 self.stats["delivery_errors"] += 1
                 self.last_delivery_error = type(exc).__name__ + ": " + str(exc)
             return dict(self.last_delivery)
+
+    def submit_message(self, message, origin):
+        if self.closed:
+            raise RuntimeError('native input service is closed')
+        with self.lock:
+            result = self.journal.append(message, origin)
+            result['delivery'] = self._deliver_locked()
+            return result
 
     def start_tick(self, limit: int = 100, retry_deferred: bool = False):
         """数据库线程：先补投 journal，再开始一轮判别；没有判别器时返回 ``None``。"""

@@ -49,7 +49,7 @@ def build() -> dict:
                 raise FileNotFoundError("missing shared package: " + name)
             shutil.copytree(source, package / name, ignore=EXCLUDE)
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as handle:
-            for path in sorted(package.rglob("*")):
+            for path in sorted(package.rglob("*"), key=lambda item: item.relative_to(package.parent).as_posix()):
                 if not path.is_file():
                     continue
                 rel = path.relative_to(package.parent).as_posix()

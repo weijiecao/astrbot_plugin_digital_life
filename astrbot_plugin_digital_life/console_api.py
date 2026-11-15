@@ -26,7 +26,8 @@ class ConsoleApi:
 
     def __init__(self, dev: Path, instance: Path | None, read_only: bool = False,
                  plugin_name: str = "astrbot_plugin_digital_life",
-                 data_dir: Path | None = None, status_provider=None):
+                 data_dir: Path | None = None, status_provider=None, application=None):
+        self.application = application
         self.dev = Path(dev)
         self.instance = Path(instance) if instance else None
         self.data_dir = Path(data_dir) if data_dir else None
@@ -52,7 +53,7 @@ class ConsoleApi:
             paths = resolve(self.dev.parent, instance=str(self.instance)
                             if self.instance else None,
                             shadow_dir=str(self.data_dir) if self.data_dir else None,
-                            read_only=self.read_only)
+                            read_only=(self.read_only or self.application is not None))
             self.console = Console(paths)
         except Exception as exc:
             self.error = type(exc).__name__ + ": " + str(exc)
@@ -99,6 +100,20 @@ class ConsoleApi:
             ("maintenance/archive", self._archive, ["POST"], "归档导出"),
             ("store/delete", self._store_delete, ["POST"], "删除基座原话"),
         ]
+        if self.application is not None:
+            def handler(name):
+                async def call():
+                    try:
+                        result = await self.application.action(name, {} if name == 'status' else await self._body())
+                        return self._json(result)
+                    except (ValueError, KeyError, TypeError) as exc:
+                        return self._error(str(exc), status_code=400)
+                    except Exception as exc:
+                        return self._error(type(exc).__name__ + ': ' + str(exc), status_code=500)
+                return call
+            for name in ('status','backup','restore','verify_backup','migration_create',
+                         'migration_batch','migration_mapping','migration_release','shadow_import','withdraw'):
+                routes.append(('runtime/'+name,handler(name),['GET'] if name=='status' else ['POST'], '统一应用服务'))
         base = "/%s/console/" % self.plugin_name
         for suffix, handler, methods, desc in routes:
             register(base + suffix, handler, methods, desc)
