@@ -2,8 +2,8 @@
   "archive": {
     "bytes": 223273,
     "file_count": 79,
-    "name": "astrbot_plugin_digital_life-0.8.0-dev.1.zip",
-    "sha256": "05ba15e9d98792220c7ddf1615bad8448c178175626a6ebbc529c57a9ec90cff"
+    "name": "astrbot_plugin_digital_life-0.8.0-dev.2.zip",
+    "sha256": "6706578c2e1c46ed00e856ef7d1b9bb1de1b723b1149bf44ae8b1eedd84981b3"
   },
   "build_rules_version": "1",
   "dirty": false,
@@ -67,7 +67,7 @@
     {
       "bytes": 368,
       "path": "astrbot_plugin_digital_life/metadata.yaml",
-      "sha256": "975f845297d17313c2bcd7b6201b7c1eef6e8329d1f8a78f45600cb60355d5a3"
+      "sha256": "add5c304ffcccad0a11fb656726a7c030a992d5b0b1e3990711022796e20bdd0"
     },
     {
       "bytes": 17,
@@ -410,9 +410,9 @@
     "version": "1"
   },
   "layout": "engineering",
-  "plugin_version": "0.8.0-dev.1",
+  "plugin_version": "0.8.0-dev.2",
   "schema": "digital-life-plugin-export/1",
-  "source_commit": "b245057501ac5081316eb6e4e69155ec7d37b326",
+  "source_commit": "c42ceff338ce2857db2314a696a64d25cc970700",
   "source_note": "",
   "source_repository": "weijiecao/digital-life"
 }
