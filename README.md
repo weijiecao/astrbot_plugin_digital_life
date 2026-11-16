@@ -102,19 +102,27 @@
 
 ---
 
-
-本仓库只保留最新版单插件 `astrbot_plugin_digital_life`。旧 store / shadow 插件源码和
-旧构建脚本已统一移入 `archive/`，仅作历史查阅，不再参与构建和发布。
+本仓库是**数字生命 0.8.0-dev.1** 的插件分发仓库。唯一源码、测试、构建与验收记录在
+[`weijiecao/digital-life`](https://github.com/weijiecao/digital-life)，本仓库只做单向接收。
 
 | 插件 | 形态 | 版本 | 状态 |
 |---|---|---|---|
-| `astrbot_plugin_digital_life` | **单插件融合版**：一个 Star、一套生命周期、一个控制台 | 0.7.0-dev.2 | 开发版；迁移/实时追加/恢复/兼容适配已接入，真实宿主验收未完成 |
+| `astrbot_plugin_digital_life` | 单插件融合版：一个 Star、一套生命周期、一个控制台 | **0.8.0-dev.1** | 开发版；迁移、实时追加、恢复切换、撤回、运行权、输出 v2 已实现；真实宿主验收未完成 |
 
-单插件版的发布 zip 自包含 `memory_engine`、`memory_output`、
-`v1_5_consolidator`、`astrbot_memory_input`、`dlm_console`，安装时不需要额外的
-`dev` 目录。
+发布 ZIP 自包含 `memory_engine`、`memory_output`、`v1_5_consolidator`、
+`astrbot_memory_input`、`dlm_console`，安装时不需要额外的源码目录。
 
-## 单插件版（主推）
+## 安装
+
+1. 在 [Releases](https://github.com/weijiecao/astrbot_plugin_digital_life/releases) 下载
+   `astrbot_plugin_digital_life-0.8.0-dev.1.zip` 与 `SHA256SUMS-0.8.0-dev.1.txt`；
+2. 核对 SHA-256：`05ba15e9d98792220c7ddf1615bad8448c178175626a6ebbc529c57a9ec90cff`；
+3. AstrBot WebUI → 插件 → 上传 ZIP → 启用，然后**完整重启** AstrBot（热重载不能清除既有顶层模块）；
+4. 需要精确预算校验时安装 `tiktoken==0.14.0`。
+
+启用前先停用旧 `astrbot_plugin_memory_shadow`；同一数据目录只允许一个实例写入。
+
+## 单插件版
 
 `astrbot_plugin_digital_life` 把采集、后台判别、检索与输出收敛到一个 Star：
 
@@ -123,13 +131,6 @@
 - 只有 `ASSIST` 会把预算内证据作为临时内容块注入当前请求；
 - 统一控制台：`/astrbot_plugin_digital_life/console/*`；
 - 沿用 R03–R05 的退出、取消隔离与失败重试保证。
-
-安装：从 Releases 下载 `astrbot_plugin_digital_life-0.7.0-dev.2.zip`，在 AstrBot
-WebUI 插件页上传并启用。需要 `tiktoken`：
-
-```powershell
-python -m pip install tiktoken==0.14.0
-```
 
 ### 配置
 
@@ -149,69 +150,48 @@ python -m pip install tiktoken==0.14.0
 插件配置优先；显式清空 `judge_provider_id` 会关闭判别器，不再回退环境变量。
 `mode` 是唯一注入开关，不存在隐藏的 `output_mode` 覆盖。
 
-### 数据与迁移边界
+### 数据、迁移与恢复
 
-默认使用：
+默认数据目录：
 
 ```text
 <AstrBot>/data/plugin_data/astrbot_plugin_digital_life/
 ```
 
-如果新目录不存在而旧 `astrbot_plugin_memory_shadow/` 存在，会继续使用旧目录并在
-状态中标记 `legacy_data_dir`，避免静默生成空库。若检测到旧 shadow 插件模块仍活动，
-或同一数据目录已被另一个统一实例占用，插件进入 `blocked-legacy` / `blocked-locked`
-只读诊断状态，不启动 pump、不采集、不注入。旧基座
-`manual_test_memory.sqlite3` 的正式迁移、实时追加契约、备份恢复切换、偏好排序/
-短指代等兼容能力尚未完成，因此本版是 **alpha 骨架**，不能称为 `v0.6.0-rc.1`。
+若新目录不存在而旧 `astrbot_plugin_memory_shadow/` 存在，会沿用旧目录并在状态中标记
+`legacy_data_dir`。检测到旧 shadow 插件仍活动，或同一数据目录已被另一个统一实例占用时，
+插件进入 `blocked-legacy` / `blocked-locked` 只读诊断状态，不启动 pump、不采集、不注入。
 
-## 历史归档
+旧基座迁移、实时追加与历史对账、备份/恢复代次切换、撤回、运行权均已实现，操作前提与
+失败处理见主仓库 `docs/MIGRATION_RECOVERY.md`。这些能力只通过离线与包级用例验证，
+**真实 AstrBot/NapCat、Windows 实机、浏览器页面与 72 小时长跑仍未验收**。
 
-旧版本已统一放入：
+## 工程材料与验收入口
+
+`astrbot_plugin_digital_life/` 与 `shared/` 是**托管内容**：由主仓库用
+`tools/export_astrbot_plugin.py --layout engineering` 单向导出，来源提交、逐文件哈希和
+包哈希记录在 [`SOURCE_MANIFEST.json`](SOURCE_MANIFEST.json)。**不要在本仓库直接修改**；
+修复请提交到主仓库，再从新提交重新导出。
+
+以下目录是**历史工程材料**，不是当前验收入口，也不再随本版本更新：
 
 ```text
-archive/
-  plugins/astrbot_plugin_digital_memory_store/   旧基座插件源码
-  plugins/astrbot_plugin_memory_shadow/          旧 shadow 插件源码
-  tools/build_plugins.py                         旧双插件构建脚本
+tests/          旧 20 项插件契约测试（现由主仓库 verification/ 维护）
+tools/          旧构建脚本
+verification/   旧工程包验收资产
+docs/           旧说明
+archive/        旧 store / shadow 插件源码与旧发布包
 ```
 
-历史 ZIP 仍可从 GitHub Releases 获取，但不再作为当前发布入口。新部署只使用
-`astrbot_plugin_digital_life`。
-
-## 从源码运行
-
-仓库中的插件目录是薄源码，构建时把 `shared/` 复制进插件私有包空间。源码调试可设置：
-
-```powershell
-$env:DIGITAL_LIFE_DEV = '<repo>/shared'
-```
-
-发布 zip 不需要这个变量。
-
-## 构建
-
-```powershell
-python tools/build_unified_plugin.py
-```
-
-输出在 `dist/`，包含 zip、`.sha256` 与 `RELEASE*.json`。清单文件数从最终 ZIP
-统计，不使用源码目录预过滤计数。
-
-## 验证
-
-```powershell
-python -m unittest discover -s tests -t . -v
-```
-
-覆盖统一配置/模式、单包根目录、自包含导入、OFF 生命周期与控制台状态路由。
+当前源码回归（386 项）、包级用例（completion 47 / core 137 / legacy 20）、构建与验收记录
+都在主仓库 `weijiecao/digital-life`；本仓库不重复维护第二份。
 
 ## 边界
 
-- 仍是隔离验收版本，不代表真实 AstrBot/NapCatQQ、真实模型质量或长期运行验收；
-- 控制台由 AstrBot WebUI 鉴权保护；只读模式可禁用写操作；
-- 记忆注入默认关闭，开启后请自行承担请求变化与模型效果风险；
-- 单插件 alpha 未完成旧基座迁移、恢复切换和旧插件全部兼容能力，能力表见插件
-  README。
+- 开发版，不是 RC；不得接入 V1 生产或生产 Shadow；
+- 真实 AstrBot/NapCat、Windows 实机安装、浏览器页面与 72 小时长跑未验收；
+- 控制台由 AstrBot WebUI 鉴权保护，只读模式可禁用写操作；
+- 记忆注入默认关闭，开启后请自行承担请求变化与模型效果风险。
 
 ## License
 
