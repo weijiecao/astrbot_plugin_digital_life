@@ -1,18 +1,18 @@
 {
   "archive": {
-    "bytes": 223273,
+    "bytes": 226832,
     "file_count": 79,
-    "name": "astrbot_plugin_digital_life-0.8.0-dev.2.zip",
-    "sha256": "6706578c2e1c46ed00e856ef7d1b9bb1de1b723b1149bf44ae8b1eedd84981b3"
+    "name": "astrbot_plugin_digital_life-0.8.0-dev.3.zip",
+    "sha256": "26fec9e92f7e76877eb2516e47c0e70a3bbb5429cc09d77183225f9b6a36b344"
   },
   "build_rules_version": "1",
   "dirty": false,
   "file_count": 79,
   "files": [
     {
-      "bytes": 10619,
+      "bytes": 10999,
       "path": "astrbot_plugin_digital_life/README.md",
-      "sha256": "fd1075cafdbe2dfd7f406488d8f4d21531cea5e24a676b1a5d1fb660fb3c325a"
+      "sha256": "d513d8cf1edffb57d028feec08b30c1cbc700ea976e764a43a694a920b33bdc3"
     },
     {
       "bytes": 0,
@@ -40,14 +40,14 @@
       "sha256": "3166b958a03794ba0dfaea09164ff9e4e53b4bdab24d6b48ce9582f672d17d0e"
     },
     {
-      "bytes": 9733,
+      "bytes": 10935,
       "path": "astrbot_plugin_digital_life/application/service.py",
-      "sha256": "f2c9bb1a112ebcf1b94f9907d0d0a416f81119a074f9c6ec12f3da5f0b031377"
+      "sha256": "f4a4145dd90ffbef822eda53f8b70b478748bf9eff57dca1409140e7f395262b"
     },
     {
-      "bytes": 13243,
+      "bytes": 17254,
       "path": "astrbot_plugin_digital_life/application/storage.py",
-      "sha256": "296c794c4d99f3446b0188a7311a3336765cff4e79d0b0fdb89ff68316e75647"
+      "sha256": "e0fe9567167129b0abde09c847bfe91e55058fae9c2d1d21ae4ea9c3f556851b"
     },
     {
       "bytes": 7274,
@@ -55,19 +55,19 @@
       "sha256": "fb8a2c6a8afbf30e127075cb28f3a72dc8fd5b7f1c49911074ae13b6bbef4cbf"
     },
     {
-      "bytes": 12961,
+      "bytes": 12980,
       "path": "astrbot_plugin_digital_life/console_api.py",
-      "sha256": "71c44a315933a0f8e266fc6d1f2bd7b63978a34ccd57048eec9ba2b8008110e4"
+      "sha256": "729c752fa42e5b131e30eeb5f990f82d01e15155ac2a3b7e3c84d6a515291f07"
     },
     {
-      "bytes": 52003,
+      "bytes": 51764,
       "path": "astrbot_plugin_digital_life/main.py",
-      "sha256": "f27dd1b91317ee91a33bbf453e619de51d321696940e8a0e9a4a91d1d745be68"
+      "sha256": "5130c534eed50aebc5b9b12875e01323703ff7b8e09319fa466a9a0e7ac2e04a"
     },
     {
       "bytes": 368,
       "path": "astrbot_plugin_digital_life/metadata.yaml",
-      "sha256": "add5c304ffcccad0a11fb656726a7c030a992d5b0b1e3990711022796e20bdd0"
+      "sha256": "f2ba3ca1fc919f15ae886de6ce5efea0079adda59e5e88b3d382ccb9594a0af9"
     },
     {
       "bytes": 17,
@@ -85,9 +85,9 @@
       "sha256": "993122232732d93b32ef7e562cad29f513822954e8e8d1e84cb7db4f9c1cb9fc"
     },
     {
-      "bytes": 67635,
+      "bytes": 67919,
       "path": "astrbot_plugin_digital_life/views/console/app.js",
-      "sha256": "d864e082c386f8b3f689395aa0428852edfc208fe629dbbbbcc17d10234ad636"
+      "sha256": "c6584db90a0ffcffeee0b24eee4d5e47d8a5b9f92fa0c423032cfd37ccc87afe"
     },
     {
       "bytes": 369,
@@ -125,9 +125,9 @@
       "sha256": "a9738719d8fc7be9c5d22d89ca197bbc821c2b4507757a0566e6041febfc7a7a"
     },
     {
-      "bytes": 4941,
+      "bytes": 5389,
       "path": "shared/astrbot_memory_input/journal.py",
-      "sha256": "5871adfd35e0c48a3cefd08d866c15d45b355e4e98d6c6b66a6af6a76f2f4c40"
+      "sha256": "2bea249c8e0ef4793eb9934e37056b0db5d675c9716fa0dcbd0583be62e5087c"
     },
     {
       "bytes": 6954,
@@ -140,9 +140,9 @@
       "sha256": "50bd2cf132a31b6bf6325d49a25e1598ea4f2883e28259fecc4fe53075588a20"
     },
     {
-      "bytes": 10957,
+      "bytes": 13293,
       "path": "shared/astrbot_memory_input/unified.py",
-      "sha256": "638957b81be582618c91976079545742f7baff2c9cb03dc3594b94388c286925"
+      "sha256": "b9569416c46e0f17d3e7683b3867b96deb4179de9d864504c003c25189537fc4"
     },
     {
       "bytes": 6035,
@@ -240,14 +240,14 @@
       "sha256": "725375c71a3f121e5399d60644b4853f460f40210aca33dbc94bc6a242bb6e4d"
     },
     {
-      "bytes": 22170,
+      "bytes": 22977,
       "path": "shared/memory_engine/native_host.py",
-      "sha256": "31ca67f1e0f639b96a388cbea811ace6e019bca605d6ecbcbe81d12181725dc7"
+      "sha256": "0b9198803f928815daf1a0fa3733b126eba1135aec9fc162bf7f21af905e46aa"
     },
     {
-      "bytes": 21393,
+      "bytes": 24412,
       "path": "shared/memory_engine/native_input.py",
-      "sha256": "f2c8525dade49cb446c5aae38427d46829a695cddd49251139bb04187716ff14"
+      "sha256": "64fc0701859ee273082c36624cc8fc73f453b55c0ff071e555ef2108b279762d"
     },
     {
       "bytes": 8836,
@@ -395,9 +395,9 @@
       "sha256": "4de1423421b75d5eacdb645123f1afa8e3f8963a2b0d5bb1a53a4106635defaa"
     },
     {
-      "bytes": 63172,
+      "bytes": 64281,
       "path": "shared/v1_5_consolidator/store.py",
-      "sha256": "4731834a84fc6055e3224b2581b2dc2dbd98cdc3261023de48015b832e1a8abb"
+      "sha256": "a0f945d8c43dfaac9a567cb0aea011b40aade2fc7f029b200f585c7774c713b4"
     },
     {
       "bytes": 906,
@@ -410,9 +410,9 @@
     "version": "1"
   },
   "layout": "engineering",
-  "plugin_version": "0.8.0-dev.2",
+  "plugin_version": "0.8.0-dev.3",
   "schema": "digital-life-plugin-export/1",
-  "source_commit": "c42ceff338ce2857db2314a696a64d25cc970700",
+  "source_commit": "4fb9cf3a07f48689dbebad1dd239e8e1f4a1969c",
   "source_note": "",
   "source_repository": "weijiecao/digital-life"
 }

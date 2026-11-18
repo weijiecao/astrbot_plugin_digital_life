@@ -102,12 +102,12 @@
 
 ---
 
-本仓库是**数字生命 0.8.0-dev.2** 的插件分发仓库。唯一源码、测试、构建与验收记录在
+本仓库是**数字生命 0.8.0-dev.3** 的插件分发仓库。唯一源码、测试、构建与验收记录在
 [`weijiecao/digital-life`](https://github.com/weijiecao/digital-life)，本仓库只做单向接收。
 
 | 插件 | 形态 | 版本 | 状态 |
 |---|---|---|---|
-| `astrbot_plugin_digital_life` | 单插件融合版：一个 Star、一套生命周期、一个控制台 | **0.8.0-dev.2** | 开发版；迁移、实时追加、恢复切换、撤回、运行权、输出 v2 已实现；真实宿主验收未完成 |
+| `astrbot_plugin_digital_life` | 单插件融合版：一个 Star、一套生命周期、一个控制台 | **0.8.0-dev.3** | 开发版；迁移、实时追加、恢复切换、撤回、运行权、输出 v2 已实现；真实宿主验收未完成 |
 
 发布 ZIP 自包含 `memory_engine`、`memory_output`、`v1_5_consolidator`、
 `astrbot_memory_input`、`dlm_console`，安装时不需要额外的源码目录。
@@ -115,8 +115,8 @@
 ## 安装
 
 1. 在 [Releases](https://github.com/weijiecao/astrbot_plugin_digital_life/releases) 下载
-   `astrbot_plugin_digital_life-0.8.0-dev.2.zip` 与 `SHA256SUMS-0.8.0-dev.2.txt`；
-2. 核对 SHA-256：`6706578c2e1c46ed00e856ef7d1b9bb1de1b723b1149bf44ae8b1eedd84981b3`；
+   `astrbot_plugin_digital_life-0.8.0-dev.3.zip` 与 `SHA256SUMS-0.8.0-dev.3.txt`；
+2. 核对 SHA-256：`26fec9e92f7e76877eb2516e47c0e70a3bbb5429cc09d77183225f9b6a36b344`；
 3. AstrBot WebUI → 插件 → 上传 ZIP → 启用，然后**完整重启** AstrBot（热重载不能清除既有顶层模块）；
 4. 需要精确预算校验时安装 `tiktoken==0.14.0`。
 
@@ -168,11 +168,12 @@
 
 ## 本版来源
 
-- 来源提交：`c42ceff338ce2857db2314a696a64d25cc970700`（主仓库）；
-- 验证：源码回归 401 项、包级 47＋137＋20、DOM 主体 7 条路径；
+- 来源提交：`4fb9cf3a07f48689dbebad1dd239e8e1f4a1969c`（主仓库）；
+- 验证：源码回归 407 项、包级 56＋137＋20、DOM 8 条管理流程（含过期确认）；
 - 源码 ZIP 可以重建同字节插件包（发布检查会实际重建并比较）；
-- 本版关闭 0.8.0-dev.1 验收报告的 A01（源码附件可重建）、A02（证据绑定）、
-  A03（证据索引）、A04（导出边界）。
+- 运行修复：撤回跨恢复/重启/晚到重投、管理页先预览再确认（代次/键/哈希变化即拒绝）、
+  已撤回内容退出判别上下文、同流实时消息保留首次接收顺序、历史事务化提交并保留
+  旧版未接受行 `rejected_history_baseline`。
 
 ## 工程材料与验收入口
 
